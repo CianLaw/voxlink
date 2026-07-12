@@ -5,16 +5,19 @@
 (function () {
   "use strict";
 
-  // GitHub 仓库信息（部署时替换为实际仓库）
-  const GITHUB_OWNER = "voxlink";
+  // GitHub 仓库信息
+  const GITHUB_OWNER = "CianLaw";
   const GITHUB_REPO = "voxlink";
+  const RELEASES_PAGE = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
   const GITHUB_API = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
 
   // DOM 元素 - 桌面端
   const downloadMacOS = document.getElementById("download-macos");
   const downloadWindows = document.getElementById("download-windows");
+  const downloadLinux = document.getElementById("download-linux");
   const macosFileSpan = document.querySelector(".macos-file");
   const windowsFileSpan = document.querySelector(".windows-file");
+  const linuxFileSpan = document.querySelector(".linux-file");
 
   // DOM 元素 - 移动端
   const downloadIOS = document.getElementById("download-ios");
@@ -59,6 +62,8 @@
         macosIntel: null,
         macosSilicon: null,
         windows: null,
+        linuxAppImage: null,
+        linuxDeb: null,
         ios: null,
         androidApk: null,
         androidAab: null,
@@ -69,6 +74,8 @@
       macosIntel: null,
       macosSilicon: null,
       windows: null,
+      linuxAppImage: null,
+      linuxDeb: null,
       ios: null,
       androidApk: null,
       androidAab: null,
@@ -88,12 +95,14 @@
             result.macosIntel = { name: asset.name, url, size: asset.size };
           }
         }
-      } else if (name.endsWith(".msi")) {
-        result.windows = { name: asset.name, url, size: asset.size };
-      } else if (name.endsWith(".exe") && (name.includes("setup") || name.includes("install"))) {
+      } else if (name.endsWith(".msi") || name.endsWith(".exe")) {
         if (!result.windows) {
           result.windows = { name: asset.name, url, size: asset.size };
         }
+      } else if (name.endsWith(".appimage")) {
+        result.linuxAppImage = { name: asset.name, url, size: asset.size };
+      } else if (name.endsWith(".deb")) {
+        result.linuxDeb = { name: asset.name, url, size: asset.size };
       } else if (name.endsWith(".ipa")) {
         result.ios = { name: asset.name, url, size: asset.size };
       } else if (name.endsWith(".apk")) {
@@ -118,21 +127,36 @@
   /**
    * 更新下载按钮
    */
+  function setUnavailable(btn, span, label) {
+    if (!btn) return;
+    btn.href = RELEASES_PAGE;
+    btn.target = "_blank";
+    btn.classList.remove("opacity-50", "cursor-not-allowed");
+    btn.classList.add("cursor-pointer");
+    btn.title = `${label} — 前往 GitHub Releases 查看`;
+    if (span) span.textContent = `${label} · 查看`;
+  }
+
+  function setAvailable(btn, span, ext, asset, version) {
+    if (!btn) return;
+    btn.href = asset.url;
+    btn.target = "";
+    btn.classList.remove("opacity-50", "cursor-not-allowed");
+    btn.classList.add("cursor-pointer");
+    btn.title = "";
+    if (span) {
+      const sizeStr = formatSize(asset.size);
+      span.textContent = `${ext} ${version ? `(${version})` : ""} ${sizeStr}`;
+    }
+  }
+
   function updateDownloadButtons(assets, release) {
     const version = release ? release.tag_name : "";
 
     // --- macOS ---
-    if (assets.macosIntel || assets.macosSilicon) {
-      const macosAsset = assets.macosSilicon || assets.macosIntel;
-      downloadMacOS.href = macosAsset.url;
-      downloadMacOS.classList.remove("opacity-50", "cursor-not-allowed");
-      downloadMacOS.classList.add("cursor-pointer");
-
-      if (macosFileSpan) {
-        const sizeStr = formatSize(macosAsset.size);
-        macosFileSpan.textContent = `.dmg ${version ? `(${version})` : ""} ${sizeStr}`;
-      }
-
+    const macosAsset = assets.macosSilicon || assets.macosIntel;
+    if (macosAsset) {
+      setAvailable(downloadMacOS, macosFileSpan, ".dmg", macosAsset, version);
       if (assets.macosSilicon && assets.macosIntel) {
         addSubLinks(downloadMacOS, [
           { label: "Apple Silicon", url: assets.macosSilicon.url, size: formatSize(assets.macosSilicon.size) },
@@ -140,57 +164,42 @@
         ]);
       }
     } else {
-      downloadMacOS.href = "#";
-      downloadMacOS.classList.add("opacity-50", "cursor-not-allowed");
-      if (macosFileSpan) macosFileSpan.textContent = "即将推出";
+      setUnavailable(downloadMacOS, macosFileSpan, ".dmg");
     }
 
     // --- Windows ---
     if (assets.windows) {
-      downloadWindows.href = assets.windows.url;
-      downloadWindows.classList.remove("opacity-50", "cursor-not-allowed");
-      downloadWindows.classList.add("cursor-pointer");
+      setAvailable(downloadWindows, windowsFileSpan, ".msi", assets.windows, version);
+    } else {
+      setUnavailable(downloadWindows, windowsFileSpan, ".msi");
+    }
 
-      if (windowsFileSpan) {
-        const sizeStr = formatSize(assets.windows.size);
-        windowsFileSpan.textContent = `.msi ${version ? `(${version})` : ""} ${sizeStr}`;
+    // --- Linux ---
+    const linuxAsset = assets.linuxAppImage || assets.linuxDeb;
+    if (linuxAsset) {
+      setAvailable(downloadLinux, linuxFileSpan, ".AppImage/.deb", linuxAsset, version);
+      const subLinks = [];
+      if (assets.linuxAppImage) subLinks.push({ label: "AppImage", url: assets.linuxAppImage.url, size: formatSize(assets.linuxAppImage.size) });
+      if (assets.linuxDeb) subLinks.push({ label: "deb", url: assets.linuxDeb.url, size: formatSize(assets.linuxDeb.size) });
+      if (subLinks.length > 1) {
+        addSubLinks(downloadLinux, subLinks);
       }
     } else {
-      downloadWindows.href = "#";
-      downloadWindows.classList.add("opacity-50", "cursor-not-allowed");
-      if (windowsFileSpan) windowsFileSpan.textContent = "即将推出";
+      setUnavailable(downloadLinux, linuxFileSpan, ".AppImage");
     }
 
     // --- iOS ---
     if (downloadIOS && assets.ios) {
-      downloadIOS.href = assets.ios.url;
-      downloadIOS.classList.remove("opacity-50", "cursor-not-allowed");
-      downloadIOS.classList.add("cursor-pointer");
-
-      if (iosFileSpan) {
-        const sizeStr = formatSize(assets.ios.size);
-        iosFileSpan.textContent = `.ipa ${version ? `(${version})` : ""} ${sizeStr}`;
-      }
-    } else if (downloadIOS) {
-      downloadIOS.href = "#";
-      downloadIOS.classList.add("opacity-50", "cursor-not-allowed");
-      if (iosFileSpan) iosFileSpan.textContent = "即将推出";
+      setAvailable(downloadIOS, iosFileSpan, ".ipa", assets.ios, version);
+    } else {
+      setUnavailable(downloadIOS, iosFileSpan, ".ipa");
     }
 
     // --- Android ---
     if (downloadAndroid && assets.androidApk) {
-      downloadAndroid.href = assets.androidApk.url;
-      downloadAndroid.classList.remove("opacity-50", "cursor-not-allowed");
-      downloadAndroid.classList.add("cursor-pointer");
-
-      if (androidFileSpan) {
-        const sizeStr = formatSize(assets.androidApk.size);
-        androidFileSpan.textContent = `.apk ${version ? `(${version})` : ""} ${sizeStr}`;
-      }
-    } else if (downloadAndroid) {
-      downloadAndroid.href = "#";
-      downloadAndroid.classList.add("opacity-50", "cursor-not-allowed");
-      if (androidFileSpan) androidFileSpan.textContent = "即将推出";
+      setAvailable(downloadAndroid, androidFileSpan, ".apk", assets.androidApk, version);
+    } else {
+      setUnavailable(downloadAndroid, androidFileSpan, ".apk");
     }
   }
 
@@ -227,28 +236,19 @@
   }
 
   // 绑定下载事件 - 桌面端
-  if (downloadMacOS) {
-    downloadMacOS.addEventListener("click", function () {
-      trackDownload("macOS", downloadMacOS.href.includes("releases") ? "latest" : "unavailable");
-    });
-  }
-  if (downloadWindows) {
-    downloadWindows.addEventListener("click", function () {
-      trackDownload("Windows", downloadWindows.href.includes("releases") ? "latest" : "unavailable");
-    });
-  }
-
-  // 绑定下载事件 - 移动端
-  if (downloadIOS) {
-    downloadIOS.addEventListener("click", function () {
-      trackDownload("iOS", downloadIOS.href.includes("releases") ? "latest" : "unavailable");
-    });
-  }
-  if (downloadAndroid) {
-    downloadAndroid.addEventListener("click", function () {
-      trackDownload("Android", downloadAndroid.href.includes("releases") ? "latest" : "unavailable");
-    });
-  }
+  [
+    { el: downloadMacOS, platform: "macOS" },
+    { el: downloadWindows, platform: "Windows" },
+    { el: downloadLinux, platform: "Linux" },
+    { el: downloadIOS, platform: "iOS" },
+    { el: downloadAndroid, platform: "Android" },
+  ].forEach(({ el, platform }) => {
+    if (el) {
+      el.addEventListener("click", function () {
+        trackDownload(platform, el.href.includes("releases/download") ? "latest" : "releases-page");
+      });
+    }
+  });
 
   // 页面加载时初始化
   async function init() {
@@ -263,7 +263,7 @@
     } else {
       console.warn("[VoxLink] 无法获取最新版本，显示占位符");
       updateDownloadButtons(
-        { macosIntel: null, macosSilicon: null, windows: null, ios: null, androidApk: null, androidAab: null },
+        { macosIntel: null, macosSilicon: null, windows: null, linuxAppImage: null, linuxDeb: null, ios: null, androidApk: null, androidAab: null },
         null
       );
     }
