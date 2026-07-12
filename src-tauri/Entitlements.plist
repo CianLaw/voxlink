@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 辅助功能权限：读取光标位置、注入文本 -->
+    <key>com.apple.security.accessibility</key>
+    <true/>
+
+    <!-- 音频输入权限：麦克风 -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
+    <!-- 自动化权限：剪贴板读写 -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+
+    <!-- Hardened Runtime 支持 -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <false/>
+
+    <!-- 允许加载第三方插件 -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+
+    <!-- 允许调试 -->
+    <key>com.apple.security.cs.debugger</key>
+    <false/>
+
+    <!-- 网络访问（用于检查更新） -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- 文件访问（用于读取配置文件） -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+
+    <!-- 禁止 JIT 编译限制 -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+
+    <!-- 允许未签名的可执行内存 -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <false/>
+</dict>
+</plist>

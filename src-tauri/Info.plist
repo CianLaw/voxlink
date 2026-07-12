@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>zh_CN</string>
+    <key>CFBundleDisplayName</key>
+    <string>VoxLink</string>
+    <key>CFBundleExecutable</key>
+    <string>voxlink</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.voxlink.app</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>VoxLink</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>1.0.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.utilities</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>VoxLink 需要访问麦克风以进行语音识别输入。您的语音数据仅在本地处理，不会上传到任何服务器。</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>VoxLink 需要辅助功能权限以读取光标位置和注入文本。所有操作均在本地完成，不会记录或上传任何内容。</string>
+    <key>NSSystemAdministrationUsageDescription</key>
+    <string>VoxLink 需要系统辅助功能权限以模拟键盘输入和粘贴操作。</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticTermination</key>
+    <false/>
+    <key>NSSupportsSuddenTermination</key>
+    <false/>
+</dict>
+</plist>

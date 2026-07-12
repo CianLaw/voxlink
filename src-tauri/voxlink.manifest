@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <!-- VoxLink Windows 应用程序清单 -->
+  <!-- 关键配置：uiAccess="true" 以穿透 UIPI 向管理员权限应用注入输入 -->
+
+  <assemblyIdentity
+    version="1.0.0.0"
+    processorArchitecture="*"
+    name="VoxLink.VoxLink"
+    type="win32"
+  />
+
+  <description>VoxLink - 高精度跨平台语音输入助手</description>
+
+  <!-- 依赖项：Microsoft Windows Common Controls -->
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity
+        type="win32"
+        name="Microsoft.Windows.Common-Controls"
+        version="6.0.0.0"
+        processorArchitecture="*"
+        publicKeyToken="6595b64144ccf1df"
+        language="*"
+      />
+    </dependentAssembly>
+  </dependency>
+
+  <!-- 信任信息 -->
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <!--
+          requestedExecutionLevel:
+          - uiAccess="true" 是穿透 UIPI 的核心配置
+            必须配合 Authenticode 签名 + 安装到 %ProgramFiles% 目录
+          - level="asInvoker" 表示以普通用户权限运行
+            如需管理员权限，改为 level="requireAdministrator"
+        -->
+        <requestedExecutionLevel
+          level="asInvoker"
+          uiAccess="true"
+        />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <!-- 兼容性设置 -->
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+      <!-- Windows 11 -->
+      <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}"/>
+      <!-- Windows 8.1 -->
+      <supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}"/>
+    </application>
+  </compatibility>
+
+  <!-- DPI 感知设置 -->
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+    </windowsSettings>
+  </application>
+
+</assembly>

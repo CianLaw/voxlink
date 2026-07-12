@@ -1,0 +1,456 @@
+name: VoxLink Release Build & Sign
+
+# 触发条件：推送 v* 版本标签（如 v1.0.0）时触发
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号 (如 1.0.0)"
+        required: true
+        default: "1.0.0"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # =========================================================================
+  # 获取版本号
+  # =========================================================================
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+    steps:
+      - name: 提取版本号
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(echo "${{ github.ref_name }}" | sed 's/^v//')
+            echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          fi
+
+  # =========================================================================
+  # macOS 桌面端构建 (Apple Silicon + Intel)
+  # =========================================================================
+  build-macos:
+    needs: get-version
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.get-version.outputs.version }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: 安装 Rust 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri"
+
+      - name: 安装 Tauri CLI
+        run: npm install -g @tauri-apps/cli@latest
+
+      - name: 导入 Apple 证书
+        if: env.APPLE_CERTIFICATE_BASE64 != ''
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERTIFICATE_PATH=${{ runner.temp }}/build_certificate.p12
+          KEYCHAIN_PATH=${{ runner.temp }}/app-signing.keychain-db
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}" >> $GITHUB_ENV
+
+      - name: 构建 macOS 应用 (x86_64)
+        run: npx tauri build --target x86_64-apple-darwin --bundles dmg
+
+      - name: 构建 macOS 应用 (aarch64)
+        run: npx tauri build --target aarch64-apple-darwin --bundles dmg
+
+      - name: 公证 macOS 应用
+        if: env.APPLE_ID != '' && env.APPLE_TEAM_ID != '' && env.APPLE_APP_PASSWORD != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          for dmg in src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg; do
+            echo "公证: $dmg"
+            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+            xcrun stapler staple "$dmg"
+          done
+          for dmg in src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg; do
+            echo "公证: $dmg"
+            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+            xcrun stapler staple "$dmg"
+          done
+
+      - name: 上传 macOS 构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-builds
+          path: |
+            src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          retention-days: 7
+
+  # =========================================================================
+  # Windows 桌面端构建
+  # =========================================================================
+  build-windows:
+    needs: get-version
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.get-version.outputs.version }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: 安装 Rust 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri"
+
+      - name: 安装 Tauri CLI
+        run: npm install -g @tauri-apps/cli@latest
+
+      - name: 构建 Windows 应用
+        run: npx tauri build --target x86_64-pc-windows-msvc --bundles msi,nsis
+
+      - name: 签名 Windows 构建产物
+        if: env.WINDOWS_CERTIFICATE_BASE64 != ''
+        env:
+          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $certPath = "$env:RUNNER_TEMP\certificate.pfx"
+          [System.Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64) | Set-Content $certPath -Encoding Byte
+          $msiFiles = Get-ChildItem -Path "src-tauri\target\x86_64-pc-windows-msvc\release\bundle\msi" -Filter "*.msi" -Recurse
+          foreach ($file in $msiFiles) {
+            & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" sign /f $certPath /p $env:WINDOWS_CERTIFICATE_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /d "VoxLink" "$file"
+          }
+
+      - name: 上传 Windows 构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-builds
+          path: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          retention-days: 7
+
+  # =========================================================================
+  # iOS 移动端构建
+  # =========================================================================
+  build-ios:
+    needs: get-version
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.get-version.outputs.version }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: 安装 Rust 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri"
+
+      - name: 安装 Tauri CLI
+        run: npm install -g @tauri-apps/cli@latest
+
+      - name: 初始化 iOS 项目
+        run: npx tauri ios init
+
+      - name: 构建 iOS 应用
+        run: npx tauri ios build --export-method app-store
+
+      - name: 上传 iOS 构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-builds
+          path: |
+            src-tauri/gen/apple/build/*.ipa
+          retention-days: 7
+
+  # =========================================================================
+  # Android 移动端构建
+  # =========================================================================
+  build-android:
+    needs: get-version
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.get-version.outputs.version }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      - name: 安装 Rust 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri"
+
+      - name: 安装 Tauri CLI
+        run: npm install -g @tauri-apps/cli@latest
+
+      - name: 设置 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: 设置 Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          build-tools: "34.0.0"
+          target: "android-34"
+
+      - name: 初始化 Android 项目
+        run: npx tauri android init
+
+      - name: 构建 Android APK (Release)
+        run: npx tauri android build --apk
+
+      - name: 构建 Android AAB (Play Store)
+        run: npx tauri android build --aab
+
+      - name: 上传 Android 构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-builds
+          path: |
+            src-tauri/gen/android/app/build/outputs/apk/release/*.apk
+            src-tauri/gen/android/app/build/outputs/bundle/release/*.aab
+          retention-days: 7
+
+  # =========================================================================
+  # 创建 GitHub Release 并上传所有资产
+  # =========================================================================
+  create-release:
+    needs: [get-version, build-macos, build-windows, build-ios, build-android]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.get-version.outputs.version }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 下载 macOS 构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-builds
+          path: artifacts/macos
+
+      - name: 下载 Windows 构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-builds
+          path: artifacts/windows
+
+      - name: 下载 iOS 构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-builds
+          path: artifacts/ios
+
+      - name: 下载 Android 构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: android-builds
+          path: artifacts/android
+
+      - name: 整理构建产物
+        run: |
+          mkdir -p release-assets
+          for f in artifacts/macos/*.dmg; do [ -f "$f" ] && cp "$f" release-assets/; done
+          for f in artifacts/windows/*.msi; do [ -f "$f" ] && cp "$f" release-assets/; done
+          for f in artifacts/windows/*.exe; do [ -f "$f" ] && cp "$f" release-assets/; done
+          for f in artifacts/ios/*.ipa; do [ -f "$f" ] && cp "$f" release-assets/; done
+          for f in artifacts/android/*.apk; do [ -f "$f" ] && cp "$f" release-assets/; done
+          for f in artifacts/android/*.aab; do [ -f "$f" ] && cp "$f" release-assets/; done
+          ls -la release-assets/
+
+      - name: 生成 latest.json (Updater)
+        run: |
+          VERSION=${{ env.VERSION }}
+          cat > release-assets/latest.json << JSONEOF
+          {
+            "version": "v${VERSION}",
+            "notes": "VoxLink v${VERSION}",
+            "pub_date": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "platforms": {
+              "darwin-x86_64": {
+                "signature": "",
+                "url": "https://github.com/voxlink/voxlink/releases/download/v${VERSION}/VoxLink_x64.dmg"
+              },
+              "darwin-aarch64": {
+                "signature": "",
+                "url": "https://github.com/voxlink/voxlink/releases/download/v${VERSION}/VoxLink_aarch64.dmg"
+              },
+              "windows-x86_64": {
+                "signature": "",
+                "url": "https://github.com/voxlink/voxlink/releases/download/v${VERSION}/VoxLink_x64-setup.msi"
+              },
+              "ios": {
+                "signature": "",
+                "url": "https://github.com/voxlink/voxlink/releases/download/v${VERSION}/VoxLink.ipa"
+              },
+              "android": {
+                "signature": "",
+                "url": "https://github.com/voxlink/voxlink/releases/download/v${VERSION}/VoxLink.apk"
+              }
+            }
+          }
+          JSONEOF
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: VoxLink v${{ env.VERSION }}
+          body: |
+            # VoxLink v${{ env.VERSION }}
+
+            ## 全平台支持
+            - macOS 桌面端 (.dmg) — Apple Silicon / Intel
+            - Windows 桌面端 (.msi / .exe) — x86_64
+            - iOS 移动端 (.ipa) — iPhone / iPad
+            - Android 移动端 (.apk / .aab) — 手机 / 平板
+
+            ## 新特性
+            - 高精度 Silero VAD 语音识别引擎
+            - 灵动岛风格悬浮输入界面
+            - 跨平台全端覆盖（macOS / Windows / iOS / Android）
+            - 大模型智能纠错
+            - 剪贴板无感备份与恢复
+
+            ## 系统要求
+            | 平台 | 最低版本 |
+            |------|---------|
+            | macOS | 12.0+ |
+            | Windows | 11 (x86_64) |
+            | iOS | 15.0+ |
+            | Android | 8.0+ (API 26) |
+
+            ## 安装说明
+            ### macOS
+            1. 下载 .dmg，双击挂载
+            2. 将 VoxLink 拖入 Applications
+            3. 授予辅助功能和麦克风权限
+
+            ### Windows
+            1. 下载 .msi 安装程序
+            2. 运行安装，按提示授予权限
+
+            ### iOS
+            1. 通过 TestFlight 或侧载 .ipa 安装
+            2. 授予麦克风权限
+
+            ### Android
+            1. 下载 .apk 直接安装
+            2. 或通过 Google Play 下载
+            3. 授予录音权限
+
+            ## 校验和
+            请参考下方 Assets 列表。
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/*.dmg
+            release-assets/*.msi
+            release-assets/*.exe
+            release-assets/*.ipa
+            release-assets/*.apk
+            release-assets/*.aab
+            release-assets/latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # =========================================================================
+  # 部署官方网站到 GitHub Pages
+  # =========================================================================
+  deploy-website:
+    needs: create-release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 部署到 GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./website
+          cname: voxlink.app
+          enable_jekyll: false
+          force_orphan: true

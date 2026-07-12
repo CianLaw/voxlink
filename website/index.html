@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="VoxLink - 高精度、低延迟跨平台语音输入助手。支持 macOS、Windows 11、iOS 和 Android，提供灵动岛风格的悬浮语音输入体验。" />
+  <meta name="theme-color" content="#6D5DFC" />
+  <meta property="og:title" content="VoxLink - 语音输入助手" />
+  <meta property="og:description" content="高精度、低延迟的跨平台语音输入助手" />
+  <meta property="og:type" content="website" />
+  <title>VoxLink - 高精度语音输入助手</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { DEFAULT: '#6D5DFC', light: '#8B7DFF', dark: '#4F46E5' },
+            surface: { glass: 'rgba(255,255,255,0.15)', dark: 'rgba(28,28,30,0.72)' }
+          },
+          animation: {
+            'float': 'float 4s ease-in-out infinite',
+            'pulse-glow': 'pulseGlow 3s ease-in-out infinite',
+            'waveform': 'waveform 1.6s ease-in-out infinite',
+            'fade-in': 'fadeIn 0.6s ease-out',
+            'slide-up': 'slideUp 0.8s ease-out',
+          },
+          keyframes: {
+            float: { '0%,100%': { transform: 'translateY(0px)' }, '50%': { transform: 'translateY(-12px)' } },
+            pulseGlow: { '0%,100%': { boxShadow: '0 0 30px rgba(109,93,252,0.3)' }, '50%': { boxShadow: '0 0 60px rgba(109,93,252,0.6)' } },
+            waveform: { '0%,100%': { transform: 'scaleY(0.2)' }, '50%': { transform: 'scaleY(1.0)' } },
+            fadeIn: { '0%': { opacity: '0', transform: 'translateY(20px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+            slideUp: { '0%': { opacity: '0', transform: 'translateY(40px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+    .glass { backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); background: rgba(28,28,30,0.72); border: 0.5px solid rgba(255,255,255,0.12); }
+    .glass-light { backdrop-filter: blur(16px) saturate(180%); -webkit-backdrop-filter: blur(16px) saturate(180%); background: rgba(255,255,255,0.08); border: 0.5px solid rgba(255,255,255,0.1); }
+    .gradient-text { background: linear-gradient(135deg, #6D5DFC 0%, #8B7DFF 40%, #34D399 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .hero-gradient { background: radial-gradient(ellipse at 50% 0%, rgba(109,93,252,0.15) 0%, transparent 60%), radial-gradient(ellipse at 80% 100%, rgba(52,211,153,0.08) 0%, transparent 50%); }
+    .wave-bar { display: inline-block; width: 3px; background: linear-gradient(180deg, #6D5DFC, #8B7DFF, #34D399); border-radius: 999px; animation: waveform 1.6s ease-in-out infinite; }
+    .wave-bar:nth-child(1) { animation-delay: 0s; height: 12px; }
+    .wave-bar:nth-child(2) { animation-delay: 0.15s; height: 18px; }
+    .wave-bar:nth-child(3) { animation-delay: 0.3s; height: 24px; }
+    .wave-bar:nth-child(4) { animation-delay: 0.45s; height: 20px; }
+    .wave-bar:nth-child(5) { animation-delay: 0.6s; height: 28px; }
+    .wave-bar:nth-child(6) { animation-delay: 0.75s; height: 16px; }
+    .wave-bar:nth-child(7) { animation-delay: 0.9s; height: 22px; }
+    .wave-bar:nth-child(8) { animation-delay: 1.05s; height: 14px; }
+    .wave-bar:nth-child(9) { animation-delay: 1.2s; height: 26px; }
+    .wave-bar:nth-child(10) { animation-delay: 1.35s; height: 18px; }
+    .btn-download { transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+    .btn-download:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(109,93,252,0.4); }
+    .btn-download:active { transform: scale(0.96); }
+    .feature-card { transition: all 0.4s ease; }
+    .feature-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(0,0,0,0.3); }
+  </style>
+</head>
+<body class="bg-[#0a0a0f] text-white min-h-screen antialiased">
+  <!-- 导航栏 -->
+  <nav class="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-brand to-brand-light flex items-center justify-center">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </div>
+        <span class="text-lg font-bold tracking-tight">VoxLink</span>
+      </div>
+      <div class="hidden md:flex items-center gap-8 text-sm text-white/60">
+        <a href="#features" class="hover:text-white transition-colors">功能</a>
+        <a href="#download" class="hover:text-white transition-colors">下载</a>
+        <a href="#faq" class="hover:text-white transition-colors">常见问题</a>
+        <a href="https://github.com/voxlink/voxlink" class="hover:text-white transition-colors" target="_blank">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero 区域 -->
+  <section class="relative pt-32 pb-24 overflow-hidden hero-gradient">
+    <div class="absolute inset-0 overflow-hidden pointer-events-none">
+      <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-brand/10 rounded-full blur-3xl"></div>
+      <div class="absolute bottom-1/4 right-1/4 w-80 h-80 bg-emerald-400/8 rounded-full blur-3xl"></div>
+    </div>
+    <div class="max-w-4xl mx-auto px-6 text-center relative z-10">
+      <div class="animate-fade-in">
+        <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-light mb-8 text-sm text-white/70">
+          <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+          支持 macOS 12+ & Windows 11
+        </div>
+      </div>
+      <h1 class="text-5xl md:text-7xl font-extrabold tracking-tight leading-tight mb-6 animate-slide-up">
+        说出所想<br/>
+        <span class="gradient-text">即刻呈现</span>
+      </h1>
+      <p class="text-lg md:text-xl text-white/50 max-w-2xl mx-auto mb-12 animate-slide-up" style="animation-delay: 0.2s">
+        VoxLink 是一款高精度、低延迟的跨平台语音输入助手。采用灵动岛风格悬浮设计，
+        支持大模型智能纠错，让语音输入比打字更快更准确。
+      </p>
+
+      <!-- 灵动岛预览 -->
+      <div class="animate-slide-up mb-12" style="animation-delay: 0.4s">
+        <div class="inline-flex items-center gap-3 px-6 py-3 glass rounded-[999px] animate-pulse-glow">
+          <div class="flex items-center gap-[2px] h-6">
+            <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
+            <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
+            <span class="wave-bar"></span><span class="wave-bar"></span><span class="wave-bar"></span>
+            <span class="wave-bar"></span>
+          </div>
+          <span class="w-2 h-2 rounded-full bg-brand shadow-[0_0_8px_rgba(109,93,252,0.6)]"></span>
+          <span class="text-sm text-white/80">正在聆听...</span>
+        </div>
+      </div>
+
+      <!-- 下载按钮 - 桌面端 -->
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-4 animate-slide-up" style="animation-delay: 0.6s" id="download">
+        <a id="download-macos" href="#" class="btn-download inline-flex items-center gap-3 px-8 py-4 rounded-2xl bg-white text-gray-900 font-semibold text-base shadow-lg shadow-white/10">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2v16M8 14l4 4 4-4M4 20h16"/>
+          </svg>
+          <span>
+            <span class="block text-xs opacity-60">下载 macOS 版</span>
+            <span class="block text-sm macos-file">.dmg</span>
+          </span>
+        </a>
+        <a id="download-windows" href="#" class="btn-download inline-flex items-center gap-3 px-8 py-4 rounded-2xl bg-brand hover:bg-brand-light text-white font-semibold text-base shadow-lg shadow-brand/25">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2v16M8 14l4 4 4-4M4 20h16"/>
+          </svg>
+          <span>
+            <span class="block text-xs opacity-70">下载 Windows 版</span>
+            <span class="block text-sm windows-file">.msi</span>
+          </span>
+        </a>
+      </div>
+
+      <!-- 下载按钮 - 移动端 -->
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mt-4 animate-slide-up" style="animation-delay: 0.75s">
+        <a id="download-ios" href="#" class="btn-download inline-flex items-center gap-3 px-8 py-4 rounded-2xl glass-light text-white font-semibold text-base border border-white/10">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+            <line x1="12" y1="18" x2="12.01" y2="18"/>
+          </svg>
+          <span>
+            <span class="block text-xs opacity-60">下载 iOS 版</span>
+            <span class="block text-sm ios-file">.ipa</span>
+          </span>
+        </a>
+        <a id="download-android" href="#" class="btn-download inline-flex items-center gap-3 px-8 py-4 rounded-2xl glass-light text-white font-semibold text-base border border-white/10">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="2" width="16" height="20" rx="2" ry="2"/>
+            <circle cx="9" cy="7" r="1"/>
+            <circle cx="15" cy="7" r="1"/>
+            <polyline points="8 16 12 20 16 16"/>
+          </svg>
+          <span>
+            <span class="block text-xs opacity-60">下载 Android 版</span>
+            <span class="block text-sm android-file">.apk</span>
+          </span>
+        </a>
+      </div>
+
+      <p class="text-xs text-white/30 mt-4 animate-slide-up" style="animation-delay: 0.9s">桌面端按 <kbd class="px-2 py-1 rounded bg-white/10 text-white/50">Option</kbd> + <kbd class="px-2 py-1 rounded bg-white/10 text-white/50">Space</kbd> 开始语音输入</p>
+    </div>
+  </section>
+
+  <!-- 特性展示 -->
+  <section id="features" class="py-24 px-6">
+    <div class="max-w-6xl mx-auto">
+      <h2 class="text-3xl md:text-4xl font-bold text-center mb-4">为什么选择 VoxLink</h2>
+      <p class="text-white/40 text-center mb-16 max-w-xl mx-auto">为追求极致效率的开发者、创作者和职场人士打造</p>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="feature-card glass p-8 rounded-3xl">
+          <div class="w-12 h-12 rounded-2xl bg-brand/20 flex items-center justify-center mb-6">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#6D5DFC" stroke-width="2" stroke-linecap="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-semibold mb-3">高精度语音识别</h3>
+          <p class="text-white/50 text-sm leading-relaxed">采用 Silero VAD 人声检测引擎，精准识别人声起止。结合大模型智能纠错，自动修正同音字、补全标点符号。</p>
+        </div>
+        <div class="feature-card glass p-8 rounded-3xl">
+          <div class="w-12 h-12 rounded-2xl bg-emerald-400/20 flex items-center justify-center mb-6">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="2" stroke-linecap="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-semibold mb-3">灵动岛悬浮设计</h3>
+          <p class="text-white/50 text-sm leading-relaxed">精致毛玻璃悬浮条，不遮挡工作区域。支持全屏、多屏、多空间场景，始终置顶但不抢夺焦点。</p>
+        </div>
+        <div class="feature-card glass p-8 rounded-3xl">
+          <div class="w-12 h-12 rounded-2xl bg-amber-400/20 flex items-center justify-center mb-6">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round">
+              <polyline points="16 3 21 3 21 8"/>
+              <line x1="4" y1="20" x2="21" y2="3"/>
+              <polyline points="21 16 21 21 16 21"/>
+              <line x1="15" y1="15" x2="21" y2="21"/>
+              <line x1="4" y1="4" x2="9" y2="9"/>
+            </svg>
+          </div>
+          <h3 class="text-lg font-semibold mb-3">无感文本注入</h3>
+          <p class="text-white/50 text-sm leading-relaxed">智能备份剪贴板，注入后自动恢复。支持 macOS 辅助功能和 Windows UIAutomation，精确定位光标位置。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 技术亮点 -->
+  <section class="py-24 px-6 bg-white/[0.02]">
+    <div class="max-w-6xl mx-auto">
+      <h2 class="text-3xl md:text-4xl font-bold text-center mb-4">技术架构</h2>
+      <p class="text-white/40 text-center mb-16">基于 Rust + Tauri v2 构建，极致性能与安全性</p>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="glass-light p-8 rounded-3xl">
+          <h3 class="font-semibold mb-4 text-brand-light">音频引擎</h3>
+          <ul class="space-y-3 text-white/50 text-sm">
+            <li class="flex items-start gap-2"><span class="text-brand mt-1">-</span> CPAL 无锁环形队列音频采集</li>
+            <li class="flex items-start gap-2"><span class="text-brand mt-1">-</span> Rubato SincFixedIn 高精度重采样至 16kHz</li>
+            <li class="flex items-start gap-2"><span class="text-brand mt-1">-</span> Silero VAD 实时人声激活检测</li>
+            <li class="flex items-start gap-2"><span class="text-brand mt-1">-</span> Windows 11 24H2 WASAPI 驱动层兼容</li>
+          </ul>
+        </div>
+        <div class="glass-light p-8 rounded-3xl">
+          <h3 class="font-semibold mb-4 text-emerald-400">文本注入</h3>
+          <ul class="space-y-3 text-white/50 text-sm">
+            <li class="flex items-start gap-2"><span class="text-emerald-400 mt-1">-</span> macOS AXUIElement + CGEvent 键盘模拟</li>
+            <li class="flex items-start gap-2"><span class="text-emerald-400 mt-1">-</span> Windows IUIAutomation8 + SendInput 扫描码</li>
+            <li class="flex items-start gap-2"><span class="text-emerald-400 mt-1">-</span> 剪贴板快照备份与静默恢复</li>
+            <li class="flex items-start gap-2"><span class="text-emerald-400 mt-1">-</span> 100ms 阻尼时间确保粘贴完成</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 常见问题 -->
+  <section id="faq" class="py-24 px-6">
+    <div class="max-w-3xl mx-auto">
+      <h2 class="text-3xl md:text-4xl font-bold text-center mb-16">常见问题</h2>
+      <div class="space-y-6">
+        <div class="glass p-6 rounded-2xl">
+          <h3 class="font-semibold mb-2">macOS 上提示"应用已损坏"怎么办？</h3>
+          <p class="text-white/50 text-sm leading-relaxed">VoxLink 已通过 Apple 公证，不会触发 Gatekeeper 警告。如果仍然提示，请在终端执行：<code class="px-2 py-1 rounded bg-white/10 text-brand-light text-xs">xattr -cr /Applications/VoxLink.app</code></p>
+        </div>
+        <div class="glass p-6 rounded-2xl">
+          <h3 class="font-semibold mb-2">需要授予哪些系统权限？</h3>
+          <p class="text-white/50 text-sm leading-relaxed">macOS 需要授予「辅助功能」和「麦克风」权限。首次启动时会自动引导您打开系统设置。Windows 需要以管理员身份运行安装程序。</p>
+        </div>
+        <div class="glass p-6 rounded-2xl">
+          <h3 class="font-semibold mb-2">语音数据会上传到云端吗？</h3>
+          <p class="text-white/50 text-sm leading-relaxed">不会。所有语音识别和处理均在本地完成。仅当您启用大模型纠错功能时，文本会发送到您配置的 LLM API 端点。</p>
+        </div>
+        <div class="glass p-6 rounded-2xl">
+          <h3 class="font-semibold mb-2">支持哪些语言的语音输入？</h3>
+          <p class="text-white/50 text-sm leading-relaxed">目前支持中文（普通话）和英文。更多语言支持正在开发中。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 页脚 -->
+  <footer class="py-12 px-6 border-t border-white/5">
+    <div class="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-2 text-white/30 text-sm">
+        <span>VoxLink</span>
+        <span class="text-white/10">|</span>
+        <span>用 Rust 和 Tauri 构建</span>
+      </div>
+      <div class="flex items-center gap-6 text-sm text-white/30">
+        <a href="https://github.com/voxlink/voxlink" class="hover:text-white/60 transition-colors" target="_blank">GitHub</a>
+        <a href="#" class="hover:text-white/60 transition-colors">隐私政策</a>
+        <a href="#" class="hover:text-white/60 transition-colors">使用条款</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
