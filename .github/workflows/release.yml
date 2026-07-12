@@ -66,39 +66,9 @@ jobs:
           retention-days: 7
 
   # =========================================================================
-  build-windows:
-    needs: get-version
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-
-      - run: npm ci
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "src-tauri"
-
-      - run: npm install -g @tauri-apps/cli@latest
-
-      - run: tauri build --target x86_64-pc-windows-msvc --bundles msi,nsis
-
-      - name: 上传 Windows 安装包
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-builds
-          path: |
-            src-tauri/target/*/release/bundle/msi/*.msi
-            src-tauri/target/*/release/bundle/nsis/*.exe
-          retention-days: 7
+  # Windows 构建已暂时移除（Rust 平台 API 编译问题）
+  # 待 repair 后重新启用
+  # =========================================================================
 
   # =========================================================================
   build-android:
@@ -149,9 +119,9 @@ jobs:
 
   # =========================================================================
   create-release:
-    needs: [get-version, build-macos, build-windows]
+    needs: [get-version, build-macos]
     runs-on: ubuntu-latest
-    if: always() && needs.build-macos.result == 'success' && needs.build-windows.result == 'success'
+    if: always() && needs.build-macos.result == 'success'
     steps:
       - uses: actions/checkout@v4
 
@@ -160,12 +130,6 @@ jobs:
         with:
           name: macos-builds
           path: artifacts/macos
-
-      - name: 下载 Windows 产物
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-builds
-          path: artifacts/windows
 
       - name: 下载 Android 产物（如果存在）
         uses: actions/download-artifact@v4
@@ -178,8 +142,6 @@ jobs:
         run: |
           mkdir -p release-assets
           find artifacts -name "*.dmg" -exec cp {} release-assets/ \;
-          find artifacts -name "*.msi" -exec cp {} release-assets/ \;
-          find artifacts -name "*.exe" -exec cp {} release-assets/ \;
           find artifacts -name "*.apk" -exec cp {} release-assets/ \; 2>/dev/null || true
           ls -la release-assets/
 
@@ -193,19 +155,15 @@ jobs:
 
             ## 支持平台
             - macOS 桌面端 (.dmg) — Apple Silicon / Intel
-            - Windows 桌面端 (.msi / .exe) — x86_64
             - Android 移动端 (.apk) — 手机 / 平板
+
+            > Windows 构建暂不可用，正在修复 Rust 平台 API 编译问题。
 
             ## 安装说明
             ### macOS
             1. 下载 .dmg，双击挂载
             2. 将 VoxLink 拖入 Applications
             3. 右键打开（未签名应用）+ 授予辅助功能和麦克风权限
-
-            ### Windows
-            1. 下载 .msi 安装程序
-            2. 运行安装
-            3. SmartScreen 警告时点击"更多信息"→"仍要运行"
 
             ### Android
             1. 下载 .apk

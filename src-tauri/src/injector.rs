@@ -396,33 +396,36 @@ fn simulate_paste_macos() -> Result<()> {
     // 使用 CGEvent 构造 Cmd+V 按键事件
     let source = CGEventSource::new(
         core_graphics::event_source::CGEventSourceStateID::CombinedSessionState,
-    ).context("创建 CGEventSource 失败")?;
+    );
 
     let cmd_key: CGKeyCode = 0x37; // Left Command
     let v_key: CGKeyCode = 0x09;   // V key
 
+    // CGEvent::new_keyboard_event 返回 Result<CGEvent, ()>，
+    // () 不实现 std::error::Error，不能用 .context()，用 map_err 替代
+    let make_event = |src: &CGEventSource, key: CGKeyCode, down: bool| -> Result<CGEvent> {
+        CGEvent::new_keyboard_event(src.clone(), key, down)
+            .map_err(|_| anyhow::anyhow!("创建键盘事件失败"))
+    };
+
     unsafe {
         // 按下 Command 键
-        let cmd_down = CGEvent::new_keyboard_event(source.clone(), cmd_key, true)
-            .context("创建 Command 按下事件失败")?;
+        let cmd_down = make_event(&source, cmd_key, true)?;
         cmd_down.set_flags(core_graphics::event::CGEventFlags::CGEventFlagCommand);
         cmd_down.post(CGEventTapLocation::HID);
 
         // 按下 V 键
-        let v_down = CGEvent::new_keyboard_event(source.clone(), v_key, true)
-            .context("创建 V 按下事件失败")?;
+        let v_down = make_event(&source, v_key, true)?;
         v_down.set_flags(core_graphics::event::CGEventFlags::CGEventFlagCommand);
         v_down.post(CGEventTapLocation::HID);
 
         // 释放 V 键
-        let v_up = CGEvent::new_keyboard_event(source.clone(), v_key, false)
-            .context("创建 V 释放事件失败")?;
+        let v_up = make_event(&source, v_key, false)?;
         v_up.set_flags(core_graphics::event::CGEventFlags::CGEventFlagCommand);
         v_up.post(CGEventTapLocation::HID);
 
         // 释放 Command 键
-        let cmd_up = CGEvent::new_keyboard_event(source.clone(), cmd_key, false)
-            .context("创建 Command 释放事件失败")?;
+        let cmd_up = make_event(&source, cmd_key, false)?;
         cmd_up.post(CGEventTapLocation::HID);
     }
 

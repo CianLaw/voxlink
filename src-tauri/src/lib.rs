@@ -57,7 +57,6 @@ fn create_floating_window(app: &tauri::AppHandle) -> Result<WebviewWindow, tauri
     .inner_size(400.0, 120.0)
     .resizable(false)
     .decorations(false)
-    .transparent(true)
     .always_on_top(true)
     .skip_taskbar(true)
     .visible(false)
@@ -105,7 +104,7 @@ fn create_floating_window(app: &tauri::AppHandle) -> Result<WebviewWindow, tauri
 }
 
 fn position_window_top_center(window: &WebviewWindow) {
-    if let Ok(Some(monitor)) = window.available_monitors().map(|mut m| m.next()) {
+    if let Ok(Some(monitor)) = window.available_monitors().map(|m| m.into_iter().next()) {
         let size = monitor.size();
         let ws = window.outer_size().unwrap_or(PhysicalSize::new(400, 120));
         let x = (size.width as i32 - ws.width as i32) / 2;
