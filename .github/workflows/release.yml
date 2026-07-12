@@ -31,50 +31,12 @@ jobs:
           fi
 
   # =========================================================================
-  build-macos:
-    needs: get-version
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-
-      - run: npm ci
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "src-tauri"
-
-      - run: npm install -g @tauri-apps/cli@latest
-
-      - run: tauri build --target x86_64-apple-darwin --bundles dmg
-
-      - run: tauri build --target aarch64-apple-darwin --bundles dmg
-
-      - name: 上传 macOS DMG
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-builds
-          path: src-tauri/target/*/release/bundle/dmg/*.dmg
-          retention-days: 7
-
+  # 唯一保底构建：Linux AppImage
+  # macOS / Windows / Android 均已注释，待逐个修复后逐步启用
   # =========================================================================
-  # Windows 构建已暂时移除（Rust 平台 API 编译问题）
-  # 待 repair 后重新启用
-  # =========================================================================
-
-  # =========================================================================
-  build-android:
+  build-linux:
     needs: get-version
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -85,64 +47,120 @@ jobs:
 
       - run: npm ci
 
+      - name: 安装 Linux 系统依赖（Tauri 必需）
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev
+
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri"
 
-      - uses: actions/setup-java@v4
-        with:
-          java-version: "17"
-          distribution: "temurin"
-
-      - uses: android-actions/setup-android@v3
-        with:
-          api-level: 34
-          build-tools: "34.0.0"
-          target: "android-34"
-
       - run: npm install -g @tauri-apps/cli@latest
 
-      - run: tauri android init
+      - run: tauri build --bundles appimage
 
-      - run: tauri android build --apk
-
-      - name: 上传 Android APK
+      - name: 上传 Linux AppImage
         uses: actions/upload-artifact@v4
         with:
-          name: android-builds
-          path: src-tauri/gen/android/app/build/outputs/apk/release/*.apk
+          name: linux-builds
+          path: src-tauri/target/release/bundle/appimage/*.AppImage
           retention-days: 7
+
+  # =========================================================================
+  # macOS 构建已暂时注释（x86_64-apple-darwin 编译失败，待修复后启用）
+  # =========================================================================
+  # build-macos:
+  #   needs: get-version
+  #   runs-on: macos-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: "20"
+  #         cache: "npm"
+  #     - run: npm ci
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         targets: aarch64-apple-darwin,x86_64-apple-darwin
+  #     - uses: Swatinem/rust-cache@v2
+  #       with:
+  #         workspaces: "src-tauri"
+  #     - run: npm install -g @tauri-apps/cli@latest
+  #     - run: tauri build --target x86_64-apple-darwin --bundles dmg
+  #     - run: tauri build --target aarch64-apple-darwin --bundles dmg
+  #     - name: 上传 macOS DMG
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: macos-builds
+  #         path: src-tauri/target/*/release/bundle/dmg/*.dmg
+  #         retention-days: 7
+
+  # =========================================================================
+  # Windows 构建已暂时注释（Rust 平台 API 编译问题）
+  # =========================================================================
+
+  # =========================================================================
+  # Android 构建已暂时注释（android-actions/setup-android@v3 参数不兼容）
+  # =========================================================================
+  # build-android:
+  #   needs: get-version
+  #   runs-on: ubuntu-latest
+  #   continue-on-error: true
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: "20"
+  #         cache: "npm"
+  #     - run: npm ci
+  #     - uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+  #     - uses: Swatinem/rust-cache@v2
+  #       with:
+  #         workspaces: "src-tauri"
+  #     - uses: actions/setup-java@v4
+  #       with:
+  #         java-version: "17"
+  #         distribution: "temurin"
+  #     - uses: android-actions/setup-android@v3
+  #     - run: npm install -g @tauri-apps/cli@latest
+  #     - run: tauri android init
+  #     - run: tauri android build --apk
+  #     - name: 上传 Android APK
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: android-builds
+  #         path: src-tauri/gen/android/app/build/outputs/apk/release/*.apk
+  #         retention-days: 7
 
   # =========================================================================
   create-release:
-    needs: [get-version, build-macos]
+    needs: [get-version, build-linux]
     runs-on: ubuntu-latest
-    if: always() && needs.build-macos.result == 'success'
+    if: always() && needs.build-linux.result == 'success'
     steps:
       - uses: actions/checkout@v4
 
-      - name: 下载 macOS 产物
+      - name: 下载 Linux 产物
         uses: actions/download-artifact@v4
         with:
-          name: macos-builds
-          path: artifacts/macos
-
-      - name: 下载 Android 产物（如果存在）
-        uses: actions/download-artifact@v4
-        with:
-          name: android-builds
-          path: artifacts/android
-        continue-on-error: true
+          name: linux-builds
+          path: artifacts/linux
 
       - name: 整理产物
         run: |
           mkdir -p release-assets
-          find artifacts -name "*.dmg" -exec cp {} release-assets/ \;
-          find artifacts -name "*.apk" -exec cp {} release-assets/ \; 2>/dev/null || true
+          find artifacts -name "*.AppImage" -exec cp {} release-assets/ \;
           ls -la release-assets/
 
       - name: 创建 GitHub Release
@@ -153,22 +171,16 @@ jobs:
           body: |
             # VoxLink v${{ needs.get-version.outputs.version }}
 
-            ## 支持平台
-            - macOS 桌面端 (.dmg) — Apple Silicon / Intel
-            - Android 移动端 (.apk) — 手机 / 平板
+            ## 当前可用平台
+            - Linux 桌面端 (.AppImage) — x86_64
 
-            > Windows 构建暂不可用，正在修复 Rust 平台 API 编译问题。
+            > macOS / Windows / Android 构建正在修复中，后续版本将逐步恢复。
 
             ## 安装说明
-            ### macOS
-            1. 下载 .dmg，双击挂载
-            2. 将 VoxLink 拖入 Applications
-            3. 右键打开（未签名应用）+ 授予辅助功能和麦克风权限
-
-            ### Android
-            1. 下载 .apk
-            2. 开启"允许安装未知来源"
-            3. 点击安装，授予录音权限
+            ### Linux
+            1. 下载 .AppImage
+            2. `chmod +x voxlink*.AppImage`
+            3. `./voxlink*.AppImage`
           draft: false
           prerelease: false
           files: release-assets/*
