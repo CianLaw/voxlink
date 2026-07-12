@@ -67,13 +67,15 @@ jobs:
 
       - run: npm install -g @tauri-apps/cli@latest
 
-      - run: tauri build --bundles appimage
+      - run: tauri build --bundles appimage,deb
 
-      - name: 上传 Linux AppImage
+      - name: 上传 Linux 包
         uses: actions/upload-artifact@v4
         with:
           name: linux-builds
-          path: src-tauri/target/release/bundle/appimage/*.AppImage
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
           retention-days: 7
 
   # =========================================================================
@@ -162,6 +164,7 @@ jobs:
         run: |
           mkdir -p release-assets
           find artifacts -name "*.AppImage" -exec cp {} release-assets/ \;
+          find artifacts -name "*.deb" -exec cp {} release-assets/ \;
           ls -la release-assets/
 
       - name: 创建 GitHub Release

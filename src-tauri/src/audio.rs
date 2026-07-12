@@ -7,7 +7,7 @@
 
 use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use ringbuf::traits::{Consumer, Observer, Producer, Split};
+use ringbuf::traits::{Consumer, Producer, Split};
 use ringbuf::HeapRb;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -201,10 +201,9 @@ pub async fn capture_with_vad() -> Result<Vec<f32>> {
         &input_config,
         move |data: &[f32], _: &cpal::InputCallbackInfo| {
             for &sample in data {
-                if producer.try_push(sample).is_err() {
-                    let _ = producer.try_pop();
-                    let _ = producer.try_push(sample);
-                }
+                // ringbuf 0.4 的 Producer 没有 try_pop 方法；
+                // 队列满时直接丢弃最新样本（实时音频可接受少量丢帧）
+                let _ = producer.try_push(sample);
             }
         },
         move |err| {
