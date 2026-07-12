@@ -176,15 +176,21 @@ jobs:
             # VoxLink v${{ needs.get-version.outputs.version }}
 
             ## 当前可用平台
-            - Linux 桌面端 (.AppImage) — x86_64
+            - Linux 桌面端 (.AppImage / .deb) — x86_64
 
             > macOS / Windows / Android 构建正在修复中，后续版本将逐步恢复。
 
             ## 安装说明
             ### Linux
+            **AppImage（推荐，开箱即用）:**
             1. 下载 .AppImage
             2. `chmod +x voxlink*.AppImage`
             3. `./voxlink*.AppImage`
+
+            **deb（Debian/Ubuntu 系）:**
+            1. 下载 .deb
+            2. `sudo dpkg -i voxlink*.deb`
+            3. 应用程序菜单中启动 VoxLink
           draft: false
           prerelease: false
           files: release-assets/*

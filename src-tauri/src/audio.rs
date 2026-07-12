@@ -178,61 +178,64 @@ impl AudioResampler {
 // ============================================================================
 
 pub async fn capture_with_vad() -> Result<Vec<f32>> {
-    let host = cpal::default_host();
-    let device = host.default_input_device().context("未找到音频输入设备")?;
-    let device_name = device.name().unwrap_or_else(|_| "未知设备".to_string());
-    log::info!("[VoxLink] 音频输入设备: {}", device_name);
+    tokio::task::spawn_blocking(|| {
+        let host = cpal::default_host();
+        let device = host.default_input_device().context("未找到音频输入设备")?;
+        let device_name = device.name().unwrap_or_else(|_| "未知设备".to_string());
+        log::info!("[VoxLink] 音频输入设备: {}", device_name);
 
-    let supported_config = device.default_input_config().context("无法获取设备默认输入配置")?;
-    let input_config: cpal::StreamConfig = supported_config.into();
-    log::info!("[VoxLink] 输入配置: {:?} channels, {:?} sample rate",
-        input_config.channels, input_config.sample_rate);
+        let supported_config = device.default_input_config().context("无法获取设备默认输入配置")?;
+        let input_config: cpal::StreamConfig = supported_config.into();
+        log::info!("[VoxLink] 输入配置: {:?} channels, {:?} sample rate",
+            input_config.channels, input_config.sample_rate);
 
-    let input_channels = input_config.channels as usize;
-    let input_rate = input_config.sample_rate.0 as usize;
+        let input_channels = input_config.channels as usize;
+        let input_rate = input_config.sample_rate.0 as usize;
 
-    let ring = HeapRb::<f32>::new(RING_BUFFER_CAPACITY);
-    let (mut producer, mut consumer) = ring.split();
+        let ring = HeapRb::<f32>::new(RING_BUFFER_CAPACITY);
+        let (mut producer, mut consumer) = ring.split();
 
-    let capture_running = Arc::new(AtomicBool::new(true));
-    let capture_running_clone = capture_running.clone();
+        let capture_running = Arc::new(AtomicBool::new(true));
+        let capture_running_clone = capture_running.clone();
 
-    let stream = device.build_input_stream(
-        &input_config,
-        move |data: &[f32], _: &cpal::InputCallbackInfo| {
-            for &sample in data {
-                // ringbuf 0.4 的 Producer 没有 try_pop 方法；
-                // 队列满时直接丢弃最新样本（实时音频可接受少量丢帧）
-                let _ = producer.try_push(sample);
+        let stream = device.build_input_stream(
+            &input_config,
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                if !capture_running_clone.load(Ordering::SeqCst) {
+                    return;
+                }
+                for &sample in data {
+                    let _ = producer.try_push(sample);
+                }
+            },
+            move |err| {
+                log::error!("[VoxLink] 音频采集错误: {}", err);
+            },
+            None,
+        ).context("创建音频输入流失败")?;
+
+        stream.play().context("启动音频流失败")?;
+        log::info!("[VoxLink] 音频流已启动");
+
+        let result = process_audio_stream(&mut consumer, input_rate, input_channels, &capture_running);
+
+        capture_running.store(false, Ordering::SeqCst);
+        drop(stream);
+
+        match result {
+            Ok(samples) => {
+                if samples.is_empty() {
+                    anyhow::bail!("未检测到语音");
+                }
+                log::info!("[VoxLink] 语音捕获完成: {} 样本, {:.2} 秒",
+                    samples.len(), samples.len() as f32 / TARGET_SAMPLE_RATE as f32);
+                Ok(samples)
             }
-        },
-        move |err| {
-            log::error!("[VoxLink] 音频采集错误: {}", err);
-        },
-        None,
-    ).context("创建音频输入流失败")?;
-
-    stream.play().context("启动音频流失败")?;
-    log::info!("[VoxLink] 音频流已启动");
-
-    let result = tokio::task::spawn_blocking(move || {
-        process_audio_stream(&mut consumer, input_rate, input_channels, &capture_running_clone)
-    }).await.context("音频处理线程 panic")?;
-
-    capture_running.store(false, Ordering::SeqCst);
-    drop(stream);
-
-    match result {
-        Ok(samples) => {
-            if samples.is_empty() {
-                anyhow::bail!("未检测到语音");
-            }
-            log::info!("[VoxLink] 语音捕获完成: {} 样本, {:.2} 秒",
-                samples.len(), samples.len() as f32 / TARGET_SAMPLE_RATE as f32);
-            Ok(samples)
+            Err(e) => Err(e),
         }
-        Err(e) => Err(e),
-    }
+    })
+    .await
+    .context("音频处理线程 panic")?
 }
 
 fn process_audio_stream(
