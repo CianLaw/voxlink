@@ -234,7 +234,7 @@ jobs:
           export CODE_SIGNING_ALLOWED=NO
           export ENABLE_BITCODE=NO
           # 使用 Tauri CLI 构建（内部会正确处理 Rust 编译 + Xcode 构建）
-          npx tauri ios build --debug --target aarch64-apple-ios 2>&1 | tail -60
+          npx tauri ios build --debug 2>&1 | tail -80
           BUILD_EXIT=${PIPESTATUS[0]}
           echo "tauri ios build exit code: $BUILD_EXIT"
           echo "=== 搜索 .app 产物（多个可能位置）==="
