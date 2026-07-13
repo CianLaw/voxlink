@@ -118,21 +118,42 @@ jobs:
       - name: 设置 Android SDK 环境变量
         run: |
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/$(ls -1 $ANDROID_SDK_ROOT/ndk/ | tail -1)" >> $GITHUB_ENV
+          # 使用 CI 预装的 NDK（不要手动安装 ndk;27 避免版本冲突）
+          NDK_VER=$(ls -1 $ANDROID_SDK_ROOT/ndk/ | tail -1)
+          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/$NDK_VER" >> $GITHUB_ENV
+          echo "Using NDK: $NDK_VER"
           echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
 
       - name: 安装必要的 SDK 组件
         run: |
           yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;27.0.12077973"
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      - run: npm install -g @tauri-apps/cli@latest
-
-      - name: 初始化 Android 项目（强制使用当前 Tauri CLI 重新生成）
+      - name: 初始化 Android 项目
         run: |
+          # 由于仓库中的 gen/android 缺少 gradlew 和 buildSrc（旧模板），需要重新生成
           rm -rf src-tauri/gen/android
-          tauri android init
+          npx tauri android init
+          echo "=== gen/android 结构 ==="
           ls -la src-tauri/gen/android/
+          echo "=== BuildTask.kt 路径检查 ==="
+          find src-tauri/gen/android/buildSrc -name "BuildTask.kt" -exec echo "Found: {}" \; -exec cat {} \; 2>/dev/null
+
+      - name: 修复 BuildTask.kt 中 CLI 路径
+        run: |
+          BUILD_TASK=$(find src-tauri/gen/android/buildSrc -name "BuildTask.kt" -type f | head -1)
+          if [ -n "$BUILD_TASK" ]; then
+            echo "Found BuildTask at: $BUILD_TASK"
+            CLI_PATH="$GITHUB_WORKSPACE/node_modules/@tauri-apps/cli/tauri.js"
+            echo "Correct CLI path: $CLI_PATH"
+            # BuildTask.kt 中 val tauriCli = File("xxx") 可能是相对/绝对路径错误
+            # 替换为正确的 CLI 路径
+            sed -i "s|val tauriCli = File(\"[^\"]*\")|val tauriCli = File(\"$CLI_PATH\")|g" "$BUILD_TASK"
+            echo "=== Patched BuildTask.kt ==="
+            grep -n "tauriCli" "$BUILD_TASK"
+          else
+            echo "No BuildTask.kt found (old template?), skipping patch"
+          fi
 
       - name: 注入 Android 权限（麦克风、前台服务、网络）
         run: |
@@ -158,7 +179,7 @@ jobs:
           cat "$GRADLE"
 
       - name: 构建 Android APK（aarch64）
-        run: tauri android build --apk --target aarch64
+        run: npx tauri android build --apk --target aarch64
 
       - name: 上传 Android APK
         uses: actions/upload-artifact@v4
@@ -197,12 +218,10 @@ jobs:
         with:
           workspaces: "src-tauri"
 
-      - run: npm install -g @tauri-apps/cli@latest
-
       - name: 初始化 iOS 项目（强制使用当前 Tauri CLI 重新生成）
         run: |
           rm -rf src-tauri/gen/apple
-          tauri ios init
+          npx tauri ios init
           ls -la src-tauri/gen/apple/
           echo "=== 查找所有 Info.plist ==="
           find src-tauri/gen/apple -name "Info.plist" -type f
