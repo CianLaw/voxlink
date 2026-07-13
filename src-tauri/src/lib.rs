@@ -1,5 +1,6 @@
 // VoxLink Tauri 入口及插件配置
 // 负责：窗口管理、全局快捷键、Tray、模块协调
+// 支持桌面端（macOS/Windows/Linux）和移动端（Android/iOS）
 
 mod audio;
 mod caret;
@@ -10,9 +11,13 @@ use serde::Serialize;
 use std::sync::Arc;
 use tauri::{
     Manager, Emitter, PhysicalPosition, PhysicalSize,
+    WebviewWindow,
+};
+
+#[cfg(desktop)]
+use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     menu::{MenuBuilder, MenuItemBuilder},
-    WebviewWindow,
 };
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -47,6 +52,7 @@ impl SharedState {
     }
 }
 
+#[cfg(desktop)]
 fn create_floating_window(app: &tauri::AppHandle) -> Result<WebviewWindow, tauri::Error> {
     let window = tauri::WebviewWindowBuilder::new(
         app,
@@ -103,6 +109,18 @@ fn create_floating_window(app: &tauri::AppHandle) -> Result<WebviewWindow, tauri
     Ok(window)
 }
 
+#[cfg(mobile)]
+fn create_mobile_window(app: &tauri::AppHandle) -> Result<WebviewWindow, tauri::Error> {
+    tauri::WebviewWindowBuilder::new(
+        app,
+        "main",
+        tauri::WebviewUrl::App("index.html".into()),
+    )
+    .title("VoxLink")
+    .build()
+}
+
+#[cfg(desktop)]
 fn position_window_top_center(window: &WebviewWindow) {
     if let Ok(Some(monitor)) = window.available_monitors().map(|m| m.into_iter().next()) {
         let size = monitor.size();
@@ -112,6 +130,7 @@ fn position_window_top_center(window: &WebviewWindow) {
     }
 }
 
+#[cfg(desktop)]
 fn toggle_floating(window: &WebviewWindow, shared: &SharedState) {
     if window.is_visible().unwrap_or(false) {
         let _ = window.hide();
@@ -134,8 +153,17 @@ fn emit_state(app: &tauri::AppHandle, shared: &SharedState) {
         _ => String::new(),
     };
     let payload = StatePayload { state, transcript, error_message };
-    if let Some(window) = app.get_webview_window("floating") {
-        let _ = window.emit("voxlink-state", &payload);
+    #[cfg(desktop)]
+    {
+        if let Some(window) = app.get_webview_window("floating") {
+            let _ = window.emit("voxlink-state", &payload);
+        }
+    }
+    #[cfg(mobile)]
+    {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.emit("voxlink-state", &payload);
+        }
     }
 }
 
@@ -194,8 +222,11 @@ async fn run_recognition_pipeline(app: tauri::AppHandle, shared: Arc<SharedState
                 shared.transcript.lock().clear();
             }
             emit_state(&app, &shared);
-            if let Some(window) = app.get_webview_window("floating") {
-                let _ = window.hide();
+            #[cfg(desktop)]
+            {
+                if let Some(window) = app.get_webview_window("floating") {
+                    let _ = window.hide();
+                }
             }
         }
         Err(e) => {
@@ -221,6 +252,7 @@ async fn simulate_llm_correction(raw_text: &str, _before: &str, _after: &str) ->
     corrected
 }
 
+#[cfg(desktop)]
 fn build_tray_menu(app: &tauri::AppHandle) -> Result<tauri::menu::Menu<tauri::Wry>, tauri::Error> {
     let toggle = MenuItemBuilder::with_id("toggle", "开始语音输入")
         .accelerator("Alt+Space")
@@ -236,11 +268,18 @@ fn build_tray_menu(app: &tauri::AppHandle) -> Result<tauri::menu::Menu<tauri::Wr
 pub fn run() {
     let shared = Arc::new(SharedState::new());
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_shell::init())
-        .setup(move |app| {
+        .plugin(tauri_plugin_shell::init());
+
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+    }
+
+    builder = builder.setup(move |app| {
+        #[cfg(desktop)]
+        {
             let window = create_floating_window(app.handle())?;
             log::info!("[VoxLink] 浮动窗口创建成功");
 
@@ -278,12 +317,12 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // 全局快捷键：使用 shortcut.to_string() 比较
+            // 全局快捷键：Alt+Space 切换浮窗
             let app_handle = app.handle().clone();
             let shared_clone = shared.clone();
             app.handle().plugin(
                 tauri_plugin_global_shortcut::Builder::new()
-                    .with_handler(move |_app, shortcut, event| {
+                    .with_handler(move |_app, shortcut, _event| {
                         if shortcut.to_string() == "Alt+Space" {
                             if let Some(win) = app_handle.get_webview_window("floating") {
                                 toggle_floating(&win, &shared_clone);
@@ -292,17 +331,30 @@ pub fn run() {
                     })
                     .build(),
             )?;
+        }
 
-            app.manage(shared.clone());
-            Ok(())
-        })
-        .on_window_event(|window, event| {
+        #[cfg(mobile)]
+        {
+            let _window = create_mobile_window(app.handle())?;
+            log::info!("[VoxLink] 移动端主窗口创建成功");
+        }
+
+        app.manage(shared.clone());
+        Ok(())
+    });
+
+    #[cfg(desktop)]
+    {
+        builder = builder.on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 if window.label() == "floating" {
                     let _ = window.hide();
                 }
             }
-        })
+        });
+    }
+
+    builder
         .invoke_handler(tauri::generate_handler![start_recognition, stop_recognition, get_state])
         .run(tauri::generate_context!())
         .expect("VoxLink 启动失败");
@@ -315,10 +367,19 @@ async fn start_recognition(
 ) -> Result<(), String> {
     let shared = state.inner().clone();
     let app_handle = app.clone();
-    if let Some(window) = app.get_webview_window("floating") {
-        position_window_top_center(&window);
-        let _ = window.show();
-        let _ = window.set_focus();
+    #[cfg(desktop)]
+    {
+        if let Some(window) = app.get_webview_window("floating") {
+            position_window_top_center(&window);
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }
+    #[cfg(mobile)]
+    {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+        }
     }
     tokio::spawn(async move { run_recognition_pipeline(app_handle, shared).await });
     Ok(())

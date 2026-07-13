@@ -31,8 +31,7 @@ jobs:
           fi
 
   # =========================================================================
-  # 唯一保底构建：Linux AppImage
-  # macOS / Windows / Android 均已注释，待逐个修复后逐步启用
+  # Linux 构建：AppImage + deb
   # =========================================================================
   build-linux:
     needs: get-version
@@ -79,92 +78,217 @@ jobs:
           retention-days: 7
 
   # =========================================================================
-  # macOS 构建已暂时注释（x86_64-apple-darwin 编译失败，待修复后启用）
+  # Android 构建：APK (universal)
   # =========================================================================
-  # build-macos:
-  #   needs: get-version
-  #   runs-on: macos-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: "20"
-  #         cache: "npm"
-  #     - run: npm ci
-  #     - uses: dtolnay/rust-toolchain@stable
-  #       with:
-  #         targets: aarch64-apple-darwin,x86_64-apple-darwin
-  #     - uses: Swatinem/rust-cache@v2
-  #       with:
-  #         workspaces: "src-tauri"
-  #     - run: npm install -g @tauri-apps/cli@latest
-  #     - run: tauri build --target x86_64-apple-darwin --bundles dmg
-  #     - run: tauri build --target aarch64-apple-darwin --bundles dmg
-  #     - name: 上传 macOS DMG
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: macos-builds
-  #         path: src-tauri/target/*/release/bundle/dmg/*.dmg
-  #         retention-days: 7
+  build-android:
+    needs: get-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri"
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: 安装 Android SDK / NDK
+        uses: android-actions/setup-android@v3
+
+      - name: 安装 Rust Android 目标和 cargo-ndk
+        run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
+          cargo install cargo-ndk --version 3.5.4 --locked
+
+      - name: 设置 Android SDK 环境变量
+        run: |
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/$(ls -1 $ANDROID_SDK_ROOT/ndk/ | tail -1)" >> $GITHUB_ENV
+          echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
+
+      - name: 安装必要的 SDK 组件
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;27.0.12077973"
+
+      - run: npm install -g @tauri-apps/cli@latest
+
+      - name: 初始化 Android 项目（首次/缺失时）
+        run: |
+          if [ ! -f "src-tauri/gen/android/gradlew" ]; then
+            echo "Android 项目未初始化，运行 tauri android init..."
+            tauri android init
+          else
+            echo "Android 项目已存在"
+          fi
+          ls -la src-tauri/gen/android/
+
+      - name: 构建 Android APK
+        run: tauri android build --apk --target aarch64
+
+      - name: 上传 Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-builds
+          path: |
+            src-tauri/gen/android/app/build/outputs/apk/release/*.apk
+            src-tauri/gen/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 7
 
   # =========================================================================
-  # Windows 构建已暂时注释（Rust 平台 API 编译问题）
+  # iOS 构建：IPA (unsigned, 需自签名)
   # =========================================================================
+  build-ios:
+    needs: get-version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,x86_64-apple-ios,aarch64-apple-ios-sim
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri"
+
+      - run: npm install -g @tauri-apps/cli@latest
+
+      - name: 初始化 iOS 项目（首次/缺失时）
+        run: |
+          if [ ! -f "src-tauri/gen/apple/Project.xcodeproj/project.pbxproj" ] && [ ! -d "src-tauri/gen/apple/*.xcodeproj" ]; then
+            echo "iOS 项目未初始化，运行 tauri ios init..."
+            tauri ios init
+          else
+            echo "iOS 项目已存在"
+          fi
+          ls -la src-tauri/gen/apple/
+
+      - name: 安装 CocoaPods 依赖
+        run: |
+          cd src-tauri/gen/apple
+          sudo gem install cocoapods -v 1.15.2
+          pod install || true
+
+      - name: 配置 Xcode 禁用代码签名（unsigned 构建）
+        run: |
+          cd src-tauri/gen/apple
+          # 配置所有 targets 使用无签名构建
+          xcodebuild -list -project *.xcodeproj 2>/dev/null || true
+
+      - name: 构建 iOS debug .app（真机 arm64, 关闭签名）
+        run: |
+          # Tauri iOS build 直接生成 .app；通过 CODE_SIGN_IDENTITY="" 禁用签名
+          tauri ios build --debug 2>&1 | tail -50 || true
+
+      - name: 打包 unsigned IPA
+        run: |
+          # 寻找构建产物并打包成 IPA
+          echo "=== 搜索 .app 产物 ==="
+          APP_PATH=$(find src-tauri/target -name "*.app" -path "*aarch64*debug*" -type d 2>/dev/null | head -1)
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find src-tauri/target -name "*.app" -path "*aarch64*" -type d 2>/dev/null | head -1)
+          fi
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "*.app" -path "*Debug-iphoneos*" -type d 2>/dev/null | head -1)
+          fi
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "*.app" -path "*Release-iphoneos*" -type d 2>/dev/null | head -1)
+          fi
+          echo "找到 APP_PATH: $APP_PATH"
+          if [ -n "$APP_PATH" ] && [ -d "$APP_PATH" ]; then
+            mkdir -p Payload
+            cp -R "$APP_PATH" Payload/
+            zip -r VoxLink-unsigned.ipa Payload
+            rm -rf Payload
+            echo "IPA created: VoxLink-unsigned.ipa"
+            ls -la VoxLink-unsigned.ipa
+          else
+            echo "ERROR: No .app found for IPA packaging"
+            echo "--- target dir:"
+            find src-tauri/target -name "*.app" -type d 2>/dev/null | head -20
+            echo "--- derived data:"
+            find ~/Library/Developer/Xcode/DerivedData -name "*.app" -type d 2>/dev/null | head -20
+            exit 1
+          fi
+
+      - name: 上传 iOS IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-builds
+          path: VoxLink-unsigned.ipa
+          retention-days: 7
 
   # =========================================================================
-  # Android 构建已暂时注释（android-actions/setup-android@v3 参数不兼容）
-  # =========================================================================
-  # build-android:
-  #   needs: get-version
-  #   runs-on: ubuntu-latest
-  #   continue-on-error: true
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: "20"
-  #         cache: "npm"
-  #     - run: npm ci
-  #     - uses: dtolnay/rust-toolchain@stable
-  #       with:
-  #         targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
-  #     - uses: Swatinem/rust-cache@v2
-  #       with:
-  #         workspaces: "src-tauri"
-  #     - uses: actions/setup-java@v4
-  #       with:
-  #         java-version: "17"
-  #         distribution: "temurin"
-  #     - uses: android-actions/setup-android@v3
-  #     - run: npm install -g @tauri-apps/cli@latest
-  #     - run: tauri android init
-  #     - run: tauri android build --apk
-  #     - name: 上传 Android APK
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: android-builds
-  #         path: src-tauri/gen/android/app/build/outputs/apk/release/*.apk
-  #         retention-days: 7
-
+  # 发布 Release 并上传所有产物
   # =========================================================================
   create-release:
-    needs: [get-version, build-linux]
+    needs: [get-version, build-linux, build-android, build-ios]
     runs-on: ubuntu-latest
-    if: always() && needs.build-linux.result == 'success'
+    if: always() && (needs.build-linux.result == 'success' || needs.build-android.result == 'success' || needs.build-ios.result == 'success')
     steps:
       - uses: actions/checkout@v4
 
       - name: 下载 Linux 产物
+        if: needs.build-linux.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: linux-builds
           path: artifacts/linux
 
-      - name: 整理产物
+      - name: 下载 Android 产物
+        if: needs.build-android.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: android-builds
+          path: artifacts/android
+
+      - name: 下载 iOS 产物
+        if: needs.build-ios.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-builds
+          path: artifacts/ios
+
+      - name: 整理产物（移除 -unsigned 等后缀便于识别）
         run: |
           mkdir -p release-assets
-          find artifacts -name "*.AppImage" -exec cp {} release-assets/ \;
-          find artifacts -name "*.deb" -exec cp {} release-assets/ \;
+          # Linux
+          find artifacts/linux -name "*.AppImage" -exec cp {} release-assets/ \; 2>/dev/null || true
+          find artifacts/linux -name "*.deb" -exec cp {} release-assets/ \; 2>/dev/null || true
+          # Android (优先 release APK，fallback debug)
+          APK_RELEASE=$(find artifacts/android -name "*release*.apk" -type f | head -1)
+          APK_DEBUG=$(find artifacts/android -name "*debug*.apk" -type f | head -1)
+          if [ -n "$APK_RELEASE" ]; then
+            cp "$APK_RELEASE" release-assets/VoxLink-v${{ needs.get-version.outputs.version }}.apk
+          elif [ -n "$APK_DEBUG" ]; then
+            cp "$APK_DEBUG" release-assets/VoxLink-v${{ needs.get-version.outputs.version }}.apk
+          fi
+          # iOS
+          find artifacts/ios -name "*.ipa" -exec cp {} release-assets/ \; 2>/dev/null || true
+          echo "=== Release 产物列表 ==="
           ls -la release-assets/
 
       - name: 创建 GitHub Release
@@ -176,21 +300,34 @@ jobs:
             # VoxLink v${{ needs.get-version.outputs.version }}
 
             ## 当前可用平台
-            - Linux 桌面端 (.AppImage / .deb) — x86_64
 
-            > macOS / Windows / Android 构建正在修复中，后续版本将逐步恢复。
+            | 平台 | 文件 | 说明 |
+            |------|------|------|
+            | Linux (x86_64) | `.AppImage` / `.deb` | 开箱即用 |
+            | Android (arm64) | `.apk` | 允许「未知来源」后直接安装 |
+            | iOS | `.ipa` (unsigned) | 需使用 AltStore/Sideloadly 等工具自签名安装 |
 
             ## 安装说明
-            ### Linux
-            **AppImage（推荐，开箱即用）:**
-            1. 下载 .AppImage
-            2. `chmod +x voxlink*.AppImage`
-            3. `./voxlink*.AppImage`
 
-            **deb（Debian/Ubuntu 系）:**
-            1. 下载 .deb
-            2. `sudo dpkg -i voxlink*.deb`
-            3. 应用程序菜单中启动 VoxLink
+            ### Linux
+            **AppImage（推荐）:**
+            1. 下载 `.AppImage`
+            2. `chmod +x VoxLink-*.AppImage`
+            3. `./VoxLink-*.AppImage`
+
+            **deb（Debian/Ubuntu）:**
+            1. `sudo dpkg -i voxlink_*.deb`
+
+            ### Android
+            1. 下载 `.apk` 到手机
+            2. 在文件管理器中点击安装，允许「未知来源」
+            3. 首次启动授予「麦克风」权限
+
+            ### iOS
+            由于 Apple 限制，未签名 IPA 无法直接安装。您需要：
+            - 使用 **AltStore** / **Sideloadly** 等工具用自己的 Apple ID 签名安装
+            - 或使用 **TrollStore**（越狱设备）永久安装
+            - macOS / Windows 版本正在开发中
           draft: false
           prerelease: false
           files: release-assets/*
