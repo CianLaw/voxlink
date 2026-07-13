@@ -128,18 +128,28 @@ jobs:
 
       - run: npm install -g @tauri-apps/cli@latest
 
-      - name: 初始化 Android 项目（首次/缺失时）
+      - name: 初始化 Android 项目（强制使用当前 Tauri CLI 重新生成）
         run: |
-          if [ ! -f "src-tauri/gen/android/gradlew" ]; then
-            echo "Android 项目未初始化，运行 tauri android init..."
-            tauri android init
-          else
-            echo "Android 项目已存在"
-          fi
+          rm -rf src-tauri/gen/android
+          tauri android init
           ls -la src-tauri/gen/android/
 
-      - name: 构建 Android APK
-        run: tauri android build --apk --target aarch64
+      - name: 注入 Android 权限（麦克风、前台服务、网络）
+        run: |
+          MANIFEST=src-tauri/gen/android/app/src/main/AndroidManifest.xml
+          # 在 </manifest> 前插入权限声明
+          sed -i 's|</manifest>|<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n</manifest>|' "$MANIFEST"
+          cat "$MANIFEST"
+
+      - name: 关闭 Android release minify（避免 Rust/JNI 符号被混淆）
+        run: |
+          GRADLE=src-tauri/gen/android/app/build.gradle.kts
+          sed -i 's/isMinifyEnabled = true/isMinifyEnabled = false/g' "$GRADLE"
+          sed -i 's/isShrinkResources = true/isShrinkResources = false/g' "$GRADLE"
+          grep -E "minify|shrink" "$GRADLE"
+
+      - name: 构建 Android APK（aarch64）
+        run: tauri android build --apk --target aarch64-linux-android
 
       - name: 上传 Android APK
         uses: actions/upload-artifact@v4
@@ -151,11 +161,15 @@ jobs:
           retention-days: 7
 
   # =========================================================================
-  # iOS 构建：IPA (unsigned, 需自签名)
+  # iOS 构建（可选，不阻塞发布）
+  # 注意：iOS 真机构建需要 Apple Developer 账号签名（$99/年），
+  # 在无签名的 CI 环境下无法生成可安装到真机的 IPA。
+  # 本 job 设为 continue-on-error，会先尝试模拟器构建验证代码可编译。
   # =========================================================================
   build-ios:
     needs: get-version
     runs-on: macos-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -176,14 +190,10 @@ jobs:
 
       - run: npm install -g @tauri-apps/cli@latest
 
-      - name: 初始化 iOS 项目（首次/缺失时）
+      - name: 初始化 iOS 项目（强制使用当前 Tauri CLI 重新生成）
         run: |
-          if [ ! -f "src-tauri/gen/apple/Project.xcodeproj/project.pbxproj" ] && [ ! -d "src-tauri/gen/apple/*.xcodeproj" ]; then
-            echo "iOS 项目未初始化，运行 tauri ios init..."
-            tauri ios init
-          else
-            echo "iOS 项目已存在"
-          fi
+          rm -rf src-tauri/gen/apple
+          tauri ios init
           ls -la src-tauri/gen/apple/
 
       - name: 安装 CocoaPods 依赖
@@ -192,31 +202,51 @@ jobs:
           sudo gem install cocoapods -v 1.15.2
           pod install || true
 
-      - name: 配置 Xcode 禁用代码签名（unsigned 构建）
+      - name: 注入 iOS 麦克风权限描述（Info.plist）
+        run: |
+          PLIST=src-tauri/gen/apple/Info.plist
+          # 在 </dict> 前插入 NSMicrophoneUsageDescription
+          /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'VoxLink 需要访问麦克风以进行语音识别输入。'" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :NSSpeechRecognitionUsageDescription string 'VoxLink 需要语音识别权限以将您的语音转换为文字。'" "$PLIST" 2>/dev/null || true
+          cat "$PLIST"
+
+      - name: 构建 iOS 真机 unsigned IPA（无 Apple 签名）
         run: |
           cd src-tauri/gen/apple
-          # 配置所有 targets 使用无签名构建
-          xcodebuild -list -project *.xcodeproj 2>/dev/null || true
-
-      - name: 构建 iOS debug .app（真机 arm64, 关闭签名）
-        run: |
-          # Tauri iOS build 直接生成 .app；通过 CODE_SIGN_IDENTITY="" 禁用签名
-          tauri ios build --debug 2>&1 | tail -50 || true
+          # 先安装 pods
+          pod install
+          # 找到 workspace 和 scheme
+          WORKSPACE=$(ls *.xcworkspace 2>/dev/null | head -1)
+          PROJ=$(ls *.xcodeproj 2>/dev/null | head -1)
+          echo "Workspace: $WORKSPACE, Project: $PROJ"
+          # 列出可用 schemes
+          if [ -n "$WORKSPACE" ]; then
+            xcodebuild -workspace "$WORKSPACE" -list 2>&1 | tail -20
+            # 尝试无签名真机 arm64 debug 构建
+            xcodebuild \
+              -workspace "$WORKSPACE" \
+              -scheme voxlink_iOS \
+              -configuration Debug \
+              -sdk iphoneos \
+              -arch arm64 \
+              -destination 'generic/platform=iOS' \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGN_ENTITLEMENTS="" \
+              ENABLE_BITCODE=NO \
+              ONLY_ACTIVE_ARCH=YES \
+              build \
+              2>&1 | tail -80
+          else
+            echo "No workspace found"
+            exit 1
+          fi
 
       - name: 打包 unsigned IPA
         run: |
-          # 寻找构建产物并打包成 IPA
           echo "=== 搜索 .app 产物 ==="
-          APP_PATH=$(find src-tauri/target -name "*.app" -path "*aarch64*debug*" -type d 2>/dev/null | head -1)
-          if [ -z "$APP_PATH" ]; then
-            APP_PATH=$(find src-tauri/target -name "*.app" -path "*aarch64*" -type d 2>/dev/null | head -1)
-          fi
-          if [ -z "$APP_PATH" ]; then
-            APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "*.app" -path "*Debug-iphoneos*" -type d 2>/dev/null | head -1)
-          fi
-          if [ -z "$APP_PATH" ]; then
-            APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "*.app" -path "*Release-iphoneos*" -type d 2>/dev/null | head -1)
-          fi
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "*.app" -path "*Debug-iphoneos*" -type d 2>/dev/null | head -1)
           echo "找到 APP_PATH: $APP_PATH"
           if [ -n "$APP_PATH" ] && [ -d "$APP_PATH" ]; then
             mkdir -p Payload
@@ -226,15 +256,14 @@ jobs:
             echo "IPA created: VoxLink-unsigned.ipa"
             ls -la VoxLink-unsigned.ipa
           else
-            echo "ERROR: No .app found for IPA packaging"
-            echo "--- target dir:"
-            find src-tauri/target -name "*.app" -type d 2>/dev/null | head -20
-            echo "--- derived data:"
-            find ~/Library/Developer/Xcode/DerivedData -name "*.app" -type d 2>/dev/null | head -20
+            echo "=== 尝试用 tauri ios build --debug 构建模拟器版本 ==="
+            cd $GITHUB_WORKSPACE
+            tauri ios build --debug --target aarch64-apple-ios-sim 2>&1 | tail -40 || true
+            echo "无法构建真机 IPA（需要 Apple 开发者账号签名）"
             exit 1
           fi
 
-      - name: 上传 iOS IPA
+      - name: 上传 iOS unsigned IPA
         uses: actions/upload-artifact@v4
         with:
           name: ios-builds
