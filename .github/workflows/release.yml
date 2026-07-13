@@ -244,7 +244,7 @@ jobs:
           echo "=== Nosign.xcconfig created ==="
           cat "$APPLE_DIR/Nosign.xcconfig"
 
-          echo "=== Patching project.pbxproj to disable code signing ==="
+          echo "=== Patching project.pbxproj to disable code signing AND inject framework linker flags ==="
           sed -i.bak \
             -e 's/CODE_SIGN_IDENTITY = "[^"]*";/CODE_SIGN_IDENTITY = "";/g' \
             -e 's/CODE_SIGN_IDENTITY = -;/CODE_SIGN_IDENTITY = "";/g' \
@@ -258,14 +258,11 @@ jobs:
             "$PBXPROJ"
           rm -f "$PBXPROJ.bak"
 
-          echo "=== Adding AudioToolbox/AVFoundation/Foundation frameworks to Xcode project ==="
+          echo "=== Adding AudioToolbox/AVFoundation/Foundation frameworks via Python script ==="
           python3 "$GITHUB_WORKSPACE/scripts/add_frameworks.py" "$PBXPROJ"
-          echo "=== Verify frameworks ==="
-          grep -c "AudioToolbox.framework" "$PBXPROJ" && echo "AudioToolbox OK" || echo "AudioToolbox MISSING"
-          grep -c "AVFoundation.framework" "$PBXPROJ" && echo "AVFoundation OK" || echo "AVFoundation MISSING"
-
-          echo "=== Verify pbxproj patch (code signing lines) ==="
-          grep -nE 'CODE_SIGN|DEVELOPMENT_TEAM' "$PBXPROJ" | head -20 || echo "No matching lines found"
+          echo "=== Verify frameworks added to PBXFrameworksBuildPhase ==="
+          grep -c "AudioToolbox.framework in Frameworks" "$PBXPROJ" && echo "AudioToolbox in Frameworks phase OK" || echo "AudioToolbox MISSING from Frameworks phase"
+          grep -c "AVFoundation.framework in Frameworks" "$PBXPROJ" && echo "AVFoundation in Frameworks phase OK" || echo "AVFoundation MISSING from Frameworks phase"
 
       - name: 构建 iOS Debug 包（通过 tauri ios build）
         run: |
