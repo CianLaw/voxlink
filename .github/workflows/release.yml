@@ -131,29 +131,10 @@ jobs:
 
       - name: 初始化 Android 项目
         run: |
-          # 由于仓库中的 gen/android 缺少 gradlew 和 buildSrc（旧模板），需要重新生成
           rm -rf src-tauri/gen/android
           npx tauri android init
           echo "=== gen/android 结构 ==="
           ls -la src-tauri/gen/android/
-          echo "=== BuildTask.kt 路径检查 ==="
-          find src-tauri/gen/android/buildSrc -name "BuildTask.kt" -exec echo "Found: {}" \; -exec cat {} \; 2>/dev/null
-
-      - name: 修复 BuildTask.kt 中 CLI 路径
-        run: |
-          BUILD_TASK=$(find src-tauri/gen/android/buildSrc -name "BuildTask.kt" -type f | head -1)
-          if [ -n "$BUILD_TASK" ]; then
-            echo "Found BuildTask at: $BUILD_TASK"
-            CLI_PATH="$GITHUB_WORKSPACE/node_modules/@tauri-apps/cli/tauri.js"
-            echo "Correct CLI path: $CLI_PATH"
-            # BuildTask.kt 中 val tauriCli = File("xxx") 可能是相对/绝对路径错误
-            # 替换为正确的 CLI 路径
-            sed -i "s|val tauriCli = File(\"[^\"]*\")|val tauriCli = File(\"$CLI_PATH\")|g" "$BUILD_TASK"
-            echo "=== Patched BuildTask.kt ==="
-            grep -n "tauriCli" "$BUILD_TASK"
-          else
-            echo "No BuildTask.kt found (old template?), skipping patch"
-          fi
 
       - name: 注入 Android 权限（麦克风、前台服务、网络）
         run: |
