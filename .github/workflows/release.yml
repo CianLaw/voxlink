@@ -230,19 +230,43 @@ jobs:
         id: ios_build
         run: |
           cd "$GITHUB_WORKSPACE"
-          echo "=== 使用 Tauri CLI 构建 iOS (debug, unsigned) ==="
-          export CODE_SIGNING_ALLOWED=NO
-          export ENABLE_BITCODE=NO
-          # 使用 Tauri CLI 构建（内部会正确处理 Rust 编译 + Xcode 构建）
-          npx tauri ios build --debug 2>&1 | tail -80
+          echo "=== 创建 xcconfig 禁用代码签名 ==="
+          cat > /tmp/Nosign.xcconfig << 'XCCONFIG'
+CODE_SIGN_IDENTITY = 
+CODE_SIGNING_REQUIRED = NO
+CODE_SIGNING_ALLOWED = NO
+CODE_SIGN_ENTITLEMENTS = 
+DEVELOPMENT_TEAM = 
+ENABLE_BITCODE = NO
+PROVISIONING_PROFILE = 
+PROVISIONING_PROFILE_SPECIFIER = 
+ONLY_ACTIVE_ARCH = YES
+XCCONFIG
+          # 把 xcconfig 放到 gen/apple 目录
+          cp /tmp/Nosign.xcconfig src-tauri/gen/apple/Nosign.xcconfig
+          echo "=== 使用 xcodebuild + xcconfig 无签名构建 ==="
+          echo "TMPDIR=[$TMPDIR]"
+          # 创建假的 Tauri dev server addr 文件
+          echo "127.0.0.1:0" > "$TMPDIR/com.voxlink.app-server-addr" 2>/dev/null || true
+          echo "Addr file created at $TMPDIR/com.voxlink.app-server-addr"
+          ls -la "$TMPDIR/com.voxlink.app-server-addr" 2>/dev/null || echo "Warning: addr file not created"
+          # 基于 xcconfig 构建
+          cd src-tauri/gen/apple
+          PROJ=$(find . -maxdepth 1 -name "*.xcodeproj" -type d | head -1 | sed 's|^\./||')
+          echo "Project: $PROJ"
+          xcodebuild -project "$PROJ" \
+            -scheme voxlink_iOS \
+            -configuration Debug \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -xcconfig Nosign.xcconfig \
+            build \
+            2>&1 | tail -80
           BUILD_EXIT=${PIPESTATUS[0]}
-          echo "tauri ios build exit code: $BUILD_EXIT"
-          echo "=== 搜索 .app 产物（多个可能位置）==="
+          echo "xcodebuild exit code: $BUILD_EXIT"
+          echo "=== 搜索 .app 产物 ==="
           find ~/Library/Developer/Xcode/DerivedData -name "*.app" -type d 2>/dev/null
           find "$GITHUB_WORKSPACE/src-tauri/target" -name "*.app" -type d 2>/dev/null
-          # 查找 exportOptions.plist 或生成的 IPA
-          find ~/Library/Developer/Xcode/DerivedData -name "*.ipa" -type f 2>/dev/null
-          find "$GITHUB_WORKSPACE" -name "*.ipa" -not -path "*/node_modules/*" -type f 2>/dev/null
 
       - name: 打包 unsigned IPA
         run: |
