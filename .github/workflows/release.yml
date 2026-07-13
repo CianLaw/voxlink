@@ -167,8 +167,8 @@ jobs:
         with:
           name: android-builds
           path: |
-            src-tauri/gen/android/app/build/outputs/apk/release/*.apk
-            src-tauri/gen/android/app/build/outputs/apk/debug/*.apk
+            src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           retention-days: 7
 
   # =========================================================================
@@ -252,7 +252,6 @@ jobs:
             -scheme voxlink_iOS \
             -configuration Debug \
             -sdk iphoneos \
-            -arch arm64 \
             -destination 'generic/platform=iOS' \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
