@@ -258,6 +258,12 @@ jobs:
             "$PBXPROJ"
           rm -f "$PBXPROJ.bak"
 
+          echo "=== Adding AudioToolbox/AVFoundation/Foundation frameworks to Xcode project ==="
+          python3 "$GITHUB_WORKSPACE/scripts/add_frameworks.py" "$PBXPROJ"
+          echo "=== Verify frameworks ==="
+          grep -c "AudioToolbox.framework" "$PBXPROJ" && echo "AudioToolbox OK" || echo "AudioToolbox MISSING"
+          grep -c "AVFoundation.framework" "$PBXPROJ" && echo "AVFoundation OK" || echo "AVFoundation MISSING"
+
           echo "=== Verify pbxproj patch (code signing lines) ==="
           grep -nE 'CODE_SIGN|DEVELOPMENT_TEAM' "$PBXPROJ" | head -20 || echo "No matching lines found"
 
