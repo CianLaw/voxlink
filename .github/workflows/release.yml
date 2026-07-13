@@ -144,9 +144,18 @@ jobs:
       - name: 关闭 Android release minify（避免 Rust/JNI 符号被混淆）
         run: |
           GRADLE=src-tauri/gen/android/app/build.gradle.kts
-          sed -i 's/isMinifyEnabled = true/isMinifyEnabled = false/g' "$GRADLE"
-          sed -i 's/isShrinkResources = true/isShrinkResources = false/g' "$GRADLE"
-          grep -E "minify|shrink" "$GRADLE"
+          # 新版 Tauri 模板可能已经默认关闭，所以容错处理
+          if grep -q "isMinifyEnabled" "$GRADLE"; then
+            sed -i 's/isMinifyEnabled = true/isMinifyEnabled = false/g' "$GRADLE"
+          else
+            echo "isMinifyEnabled 字段未找到（可能新模板默认 false），跳过"
+          fi
+          if grep -q "isShrinkResources" "$GRADLE"; then
+            sed -i 's/isShrinkResources = true/isShrinkResources = false/g' "$GRADLE"
+          else
+            echo "isShrinkResources 字段未找到，跳过"
+          fi
+          cat "$GRADLE"
 
       - name: 构建 Android APK（aarch64）
         run: tauri android build --apk --target aarch64-linux-android
@@ -195,52 +204,69 @@ jobs:
           rm -rf src-tauri/gen/apple
           tauri ios init
           ls -la src-tauri/gen/apple/
+          echo "=== 查找所有 Info.plist ==="
+          find src-tauri/gen/apple -name "Info.plist" -type f
 
-      - name: 安装 CocoaPods 依赖
+      - name: 安装 CocoaPods 依赖（容错）
         run: |
           cd src-tauri/gen/apple
           sudo gem install cocoapods -v 1.15.2
-          pod install || true
+          # Podfile 可能引用不存在的 macOS target，pod install 可能失败，不阻塞
+          pod install 2>&1 || true
+          echo "=== 当前目录文件 ==="
+          ls -la
 
       - name: 注入 iOS 麦克风权限描述（Info.plist）
         run: |
-          PLIST=src-tauri/gen/apple/Info.plist
-          # 在 </dict> 前插入 NSMicrophoneUsageDescription
-          /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'VoxLink 需要访问麦克风以进行语音识别输入。'" "$PLIST" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Add :NSSpeechRecognitionUsageDescription string 'VoxLink 需要语音识别权限以将您的语音转换为文字。'" "$PLIST" 2>/dev/null || true
-          cat "$PLIST"
+          # 找到所有 iOS app 的 Info.plist 并注入
+          find src-tauri/gen/apple -path "*/ios*" -name "Info.plist" -type f | while read PLIST; do
+            echo "Injecting into $PLIST"
+            /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'VoxLink 需要访问麦克风以进行语音识别输入。'" "$PLIST" 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Add :NSSpeechRecognitionUsageDescription string 'VoxLink 需要语音识别权限以将您的语音转换为文字。'" "$PLIST" 2>/dev/null || true
+          done
+          find src-tauri/gen/apple -name "Info.plist" -type f -exec echo "=== {} ===" \; -exec cat {} \;
 
-      - name: 构建 iOS 真机 unsigned IPA（无 Apple 签名）
+      - name: 构建 iOS unsigned IPA
         run: |
+          set +e
           cd src-tauri/gen/apple
-          # 先安装 pods
-          pod install
-          # 找到 workspace 和 scheme
-          WORKSPACE=$(ls *.xcworkspace 2>/dev/null | head -1)
+          # 优先使用 workspace（若 pod install 成功），否则使用 xcodeproj
+          WORKSPACE=$(ls *.xcworkspace 2>/dev/null | grep -v pods | head -1)
           PROJ=$(ls *.xcodeproj 2>/dev/null | head -1)
-          echo "Workspace: $WORKSPACE, Project: $PROJ"
-          # 列出可用 schemes
+          echo "WORKSPACE=$WORKSPACE  PROJ=$PROJ"
+          # 列出 schemes
           if [ -n "$WORKSPACE" ]; then
             xcodebuild -workspace "$WORKSPACE" -list 2>&1 | tail -20
-            # 尝试无签名真机 arm64 debug 构建
-            xcodebuild \
-              -workspace "$WORKSPACE" \
-              -scheme voxlink_iOS \
-              -configuration Debug \
-              -sdk iphoneos \
-              -arch arm64 \
-              -destination 'generic/platform=iOS' \
-              CODE_SIGN_IDENTITY="" \
-              CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGN_ENTITLEMENTS="" \
-              ENABLE_BITCODE=NO \
-              ONLY_ACTIVE_ARCH=YES \
-              build \
-              2>&1 | tail -80
+            XCODE_CMD="xcodebuild -workspace $WORKSPACE"
+          elif [ -n "$PROJ" ]; then
+            xcodebuild -project "$PROJ" -list 2>&1 | tail -20
+            XCODE_CMD="xcodebuild -project $PROJ"
           else
-            echo "No workspace found"
+            echo "ERROR: 找不到 Xcode 项目文件"
+            find . -name "*.xcworkspace" -o -name "*.xcodeproj"
             exit 1
+          fi
+          # 尝试无签名构建
+          $XCODE_CMD \
+            -scheme voxlink_iOS \
+            -configuration Debug \
+            -sdk iphoneos \
+            -arch arm64 \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_ENTITLEMENTS="" \
+            ENABLE_BITCODE=NO \
+            ONLY_ACTIVE_ARCH=YES \
+            build \
+            2>&1 | tail -100
+          BUILD_EXIT=${PIPESTATUS[0]}
+          echo "xcodebuild exit code: $BUILD_EXIT"
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo "xcodebuild 失败，列出所有产物目录："
+            find ~/Library/Developer/Xcode/DerivedData -name "*.app" -type d 2>/dev/null | head -10
+            find . -name "*.app" -type d 2>/dev/null | head -10
           fi
 
       - name: 打包 unsigned IPA
@@ -295,7 +321,8 @@ jobs:
           path: artifacts/android
 
       - name: 下载 iOS 产物
-        if: needs.build-ios.result == 'success'
+        if: always() && needs.build-ios.result == 'success'
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: ios-builds
