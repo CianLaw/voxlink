@@ -173,9 +173,9 @@ jobs:
 
   # =========================================================================
   # iOS 构建（可选，不阻塞发布）
-  # 注意：iOS 真机构建需要 Apple Developer 账号签名（$99/年），
-  # 在无签名的 CI 环境下无法生成可安装到真机的 IPA。
-  # 本 job 设为 continue-on-error，会先尝试模拟器构建验证代码可编译。
+  # 使用 npx tauri ios build --debug 让 Tauri 完整执行构建流程（Rust 库 + 前端 + xcodebuild），
+  # 通过直接修改 project.pbxproj 禁用代码签名，无需 Apple Developer 账号。
+  # 本 job 设为 continue-on-error: true，构建失败不会阻塞其他平台发布。
   # =========================================================================
   build-ios:
     needs: get-version
@@ -199,93 +199,127 @@ jobs:
         with:
           workspaces: "src-tauri"
 
-      - name: 初始化 iOS 项目（强制使用当前 Tauri CLI 重新生成）
+      - name: 初始化 iOS 项目
         run: |
           rm -rf src-tauri/gen/apple
           npx tauri ios init
           ls -la src-tauri/gen/apple/
-          echo "=== 查找所有 Info.plist ==="
-          find src-tauri/gen/apple -name "Info.plist" -type f
 
-      - name: 安装 CocoaPods 依赖（容错）
+      - name: 安装 CocoaPods 依赖
         run: |
           cd src-tauri/gen/apple
           sudo gem install cocoapods -v 1.15.2
-          # Podfile 可能引用不存在的 macOS target，pod install 可能失败，不阻塞
           pod install 2>&1 || true
-          echo "=== 当前目录文件 ==="
           ls -la
 
       - name: 注入 iOS 麦克风权限描述（Info.plist）
         run: |
-          # 找到所有 iOS app 的 Info.plist 并注入
           find src-tauri/gen/apple -path "*/ios*" -name "Info.plist" -type f | while read PLIST; do
             echo "Injecting into $PLIST"
             /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'VoxLink 需要访问麦克风以进行语音识别输入。'" "$PLIST" 2>/dev/null || true
             /usr/libexec/PlistBuddy -c "Add :NSSpeechRecognitionUsageDescription string 'VoxLink 需要语音识别权限以将您的语音转换为文字。'" "$PLIST" 2>/dev/null || true
           done
-          find src-tauri/gen/apple -name "Info.plist" -type f -exec echo "=== {} ===" \; -exec cat {} \;
 
-      - name: 构建 iOS unsigned IPA
-        id: ios_build
+      - name: 创建 Nosign.xcconfig 并禁用代码签名
         run: |
           cd "$GITHUB_WORKSPACE"
-          echo "=== 创建 xcconfig 禁用代码签名 ==="
-          cat > /tmp/Nosign.xcconfig << 'XCCONFIG'
-CODE_SIGN_IDENTITY = 
-CODE_SIGNING_REQUIRED = NO
-CODE_SIGNING_ALLOWED = NO
-CODE_SIGN_ENTITLEMENTS = 
-DEVELOPMENT_TEAM = 
-ENABLE_BITCODE = NO
-PROVISIONING_PROFILE = 
-PROVISIONING_PROFILE_SPECIFIER = 
-ONLY_ACTIVE_ARCH = YES
-XCCONFIG
-          # 把 xcconfig 放到 gen/apple 目录
-          cp /tmp/Nosign.xcconfig src-tauri/gen/apple/Nosign.xcconfig
-          echo "=== 使用 xcodebuild + xcconfig 无签名构建 ==="
-          echo "TMPDIR=[$TMPDIR]"
-          # 创建假的 Tauri dev server addr 文件
+          APPLE_DIR="src-tauri/gen/apple"
+          XCODEPROJ=$(find "$APPLE_DIR" -maxdepth 1 -name "*.xcodeproj" -type d | head -1)
+          PBXPROJ="$XCODEPROJ/project.pbxproj"
+          echo "Xcode project: $XCODEPROJ"
+          echo "pbxproj path: $PBXPROJ"
+
+          printf '%s\n' \
+            'CODE_SIGN_IDENTITY = ""' \
+            'CODE_SIGNING_REQUIRED = NO' \
+            'CODE_SIGNING_ALLOWED = NO' \
+            'CODE_SIGN_ENTITLEMENTS = ""' \
+            'DEVELOPMENT_TEAM = ""' \
+            'ENABLE_BITCODE = NO' \
+            'PROVISIONING_PROFILE = ""' \
+            'PROVISIONING_PROFILE_SPECIFIER = ""' \
+            > "$APPLE_DIR/Nosign.xcconfig"
+          echo "=== Nosign.xcconfig created ==="
+          cat "$APPLE_DIR/Nosign.xcconfig"
+
+          echo "=== Patching project.pbxproj to disable code signing ==="
+          sed -i.bak \
+            -e 's/CODE_SIGN_IDENTITY = "[^"]*";/CODE_SIGN_IDENTITY = "";/g' \
+            -e 's/CODE_SIGN_IDENTITY = -;/CODE_SIGN_IDENTITY = "";/g' \
+            -e 's/DEVELOPMENT_TEAM = "[^"]*";/DEVELOPMENT_TEAM = "";/g' \
+            -e 's/DEVELOPMENT_TEAM = [A-Z0-9]\{10\};/DEVELOPMENT_TEAM = "";/g' \
+            -e 's/CODE_SIGNING_REQUIRED = YES;/CODE_SIGNING_REQUIRED = NO;/g' \
+            -e 's/CODE_SIGNING_ALLOWED = YES;/CODE_SIGNING_ALLOWED = NO;/g' \
+            -e 's/PROVISIONING_PROFILE_SPECIFIER = "[^"]*";/PROVISIONING_PROFILE_SPECIFIER = "";/g' \
+            -e 's/PROVISIONING_PROFILE = "[^"]*";/PROVISIONING_PROFILE = "";/g' \
+            -e 's/CODE_SIGN_ENTITLEMENTS = "[^"]*";/CODE_SIGN_ENTITLEMENTS = "";/g' \
+            "$PBXPROJ"
+          rm -f "$PBXPROJ.bak"
+
+          echo "=== Verify pbxproj patch (code signing lines) ==="
+          grep -nE 'CODE_SIGN|DEVELOPMENT_TEAM' "$PBXPROJ" | head -30 || echo "No matching lines found"
+
+      - name: 构建 iOS Debug 包（通过 tauri ios build）
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          echo "=== Creating fake Tauri dev server addr file ==="
+          mkdir -p "$TMPDIR"
           echo "127.0.0.1:0" > "$TMPDIR/com.voxlink.app-server-addr" 2>/dev/null || true
-          echo "Addr file created at $TMPDIR/com.voxlink.app-server-addr"
-          ls -la "$TMPDIR/com.voxlink.app-server-addr" 2>/dev/null || echo "Warning: addr file not created"
-          # 基于 xcconfig 构建
-          cd src-tauri/gen/apple
-          PROJ=$(find . -maxdepth 1 -name "*.xcodeproj" -type d | head -1 | sed 's|^\./||')
-          echo "Project: $PROJ"
-          xcodebuild -project "$PROJ" \
-            -scheme voxlink_iOS \
-            -configuration Debug \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -xcconfig Nosign.xcconfig \
-            build \
-            2>&1 | tail -80
+          ls -la "$TMPDIR/com.voxlink.app-server-addr" 2>/dev/null || echo "Warning: addr file not in TMPDIR"
+
+          echo "=== Setting code signing env vars ==="
+          export CODE_SIGNING_ALLOWED=NO
+          export CODE_SIGNING_REQUIRED=NO
+          export CODE_SIGN_IDENTITY=""
+          export DEVELOPMENT_TEAM=""
+
+          echo "=== Running npx tauri ios build --debug ==="
+          set +e
+          npx tauri ios build --debug 2>&1 | tail -200
           BUILD_EXIT=${PIPESTATUS[0]}
-          echo "xcodebuild exit code: $BUILD_EXIT"
-          echo "=== 搜索 .app 产物 ==="
+          set -e
+          echo "tauri ios build exit code: $BUILD_EXIT"
+
+          echo "=== Searching for build products ==="
+          echo "--- DerivedData .app ---"
           find ~/Library/Developer/Xcode/DerivedData -name "*.app" -type d 2>/dev/null
-          find "$GITHUB_WORKSPACE/src-tauri/target" -name "*.app" -type d 2>/dev/null
+          echo "--- target/aarch64-apple-ios .app ---"
+          find "$GITHUB_WORKSPACE/src-tauri/target/aarch64-apple-ios" -name "*.app" -type d 2>/dev/null
+          echo "--- target/aarch64-apple-ios-sim .app ---"
+          find "$GITHUB_WORKSPACE/src-tauri/target/aarch64-apple-ios-sim" -name "*.app" -type d 2>/dev/null
+          echo "--- Any .ipa files ---"
+          find ~/Library/Developer/Xcode/DerivedData "$GITHUB_WORKSPACE" -name "*.ipa" -not -path "*/node_modules/*" -type f 2>/dev/null
 
       - name: 打包 unsigned IPA
         run: |
-          echo "=== 搜索 .app 产物 ==="
-          # 搜索 debug-iphoneos 和 release-iphoneos 两个可能位置
-          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "*.app" -type d 2>/dev/null | { grep -iE 'iphoneos|Release-iphoneos|Debug-iphoneos|debug-iphoneos' || true; } | head -1)
-          # 如果 DerivedData 没有，搜索 target 目录
-          if [ -z "$APP_PATH" ]; then
-            APP_PATH=$(find "$GITHUB_WORKSPACE/src-tauri/target" -name "*.app" -type d -path "*ios*" 2>/dev/null | head -1)
+          cd "$GITHUB_WORKSPACE"
+          echo "=== 搜索构建产物 ==="
+
+          IPA_PATH=""
+          APP_PATH=""
+
+          EXISTING_IPA=$(find ~/Library/Developer/Xcode/DerivedData "$GITHUB_WORKSPACE/src-tauri/gen" "$GITHUB_WORKSPACE/src-tauri/target" -name "*.ipa" -not -path "*/node_modules/*" -type f 2>/dev/null | head -1)
+          if [ -n "$EXISTING_IPA" ] && [ -f "$EXISTING_IPA" ]; then
+            IPA_PATH="$EXISTING_IPA"
+            echo "Found existing IPA: $IPA_PATH"
           fi
-          # 如果还是没有，搜索任何已存在的 IPA
-          EXISTING_IPA=$(find ~/Library/Developer/Xcode/DerivedData "$GITHUB_WORKSPACE" -name "*.ipa" -not -path "*/node_modules/*" -type f 2>/dev/null | head -1)
-          echo "APP_PATH: $APP_PATH"
-          echo "EXISTING_IPA: $EXISTING_IPA"
-          if [ -n "$EXISTING_IPA" ]; then
-            echo "使用已存在的 IPA: $EXISTING_IPA"
-            cp "$EXISTING_IPA" VoxLink-unsigned.ipa
+
+          if [ -z "$IPA_PATH" ]; then
+            APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "*.app" -type d 2>/dev/null | grep -iE 'iphoneos|Debug-iphoneos|Release-iphoneos' | head -1)
+            echo "DerivedData (iphoneos) .app: $APP_PATH"
+          fi
+
+          if [ -z "$APP_PATH" ] && [ -z "$IPA_PATH" ]; then
+            APP_PATH=$(find "$GITHUB_WORKSPACE/src-tauri/target/aarch64-apple-ios" "$GITHUB_WORKSPACE/src-tauri/target/aarch64-apple-ios-sim" -name "*.app" -type d 2>/dev/null | head -1)
+            echo "target (ios) .app: $APP_PATH"
+          fi
+
+          if [ -n "$IPA_PATH" ]; then
+            echo "使用已存在的 IPA: $IPA_PATH"
+            cp "$IPA_PATH" VoxLink-unsigned.ipa
           elif [ -n "$APP_PATH" ] && [ -d "$APP_PATH" ]; then
-            echo "=== VoxLink.app 内容 ==="
+            echo "=== 打包 .app 为 IPA ==="
+            echo "App path: $APP_PATH"
             ls -la "$APP_PATH/" | head -20
             APP_SIZE=$(du -sk "$APP_PATH" | awk '{print $1}')
             echo "VoxLink.app size: ${APP_SIZE} KB"
@@ -298,10 +332,17 @@ XCCONFIG
             ditto -c -k --sequesterRsrc --keepParent Payload VoxLink-unsigned.ipa
             rm -rf Payload
           else
-            echo "ERROR: 找不到构建产物"
+            echo "ERROR: 找不到构建产物，列出所有可能位置："
+            echo "=== DerivedData (top-level) ==="
+            find ~/Library/Developer/Xcode/DerivedData -maxdepth 3 -type d 2>/dev/null | head -30
+            echo "=== src-tauri/target (ios dirs) ==="
+            find "$GITHUB_WORKSPACE/src-tauri/target" -maxdepth 3 -type d -name "*ios*" 2>/dev/null | head -20
+            echo "=== src-tauri/gen/apple ==="
+            find "$GITHUB_WORKSPACE/src-tauri/gen/apple" -maxdepth 4 -name "*.app" -o -name "*.ipa" 2>/dev/null | head -20
             exit 1
           fi
-          echo "IPA created:"
+
+          echo "=== IPA created ==="
           ls -la VoxLink-unsigned.ipa
 
       - name: 上传 iOS unsigned IPA
