@@ -95,7 +95,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -158,7 +158,7 @@ jobs:
           cat "$GRADLE"
 
       - name: 构建 Android APK（aarch64）
-        run: tauri android build --apk --target aarch64-linux-android
+        run: tauri android build --apk --target aarch64
 
       - name: 上传 Android APK
         uses: actions/upload-artifact@v4
@@ -230,15 +230,16 @@ jobs:
         run: |
           set +e
           cd src-tauri/gen/apple
-          # 优先使用 workspace（若 pod install 成功），否则使用 xcodeproj
-          WORKSPACE=$(ls *.xcworkspace 2>/dev/null | grep -v pods | head -1)
-          PROJ=$(ls *.xcodeproj 2>/dev/null | head -1)
+          # 查找 xcworkspace/xcodeproj（用 -d 确保只匹配目录本身）
+          WORKSPACE=$(find . -maxdepth 1 -name "*.xcworkspace" -type d ! -name "*Pods*" | head -1 | sed 's|^\./||')
+          PROJ=$(find . -maxdepth 1 -name "*.xcodeproj" -type d | head -1 | sed 's|^\./||')
           echo "WORKSPACE=$WORKSPACE  PROJ=$PROJ"
-          # 列出 schemes
           if [ -n "$WORKSPACE" ]; then
+            echo "=== Listing workspace schemes ==="
             xcodebuild -workspace "$WORKSPACE" -list 2>&1 | tail -20
             XCODE_CMD="xcodebuild -workspace $WORKSPACE"
           elif [ -n "$PROJ" ]; then
+            echo "=== Listing project schemes ==="
             xcodebuild -project "$PROJ" -list 2>&1 | tail -20
             XCODE_CMD="xcodebuild -project $PROJ"
           else
@@ -246,7 +247,7 @@ jobs:
             find . -name "*.xcworkspace" -o -name "*.xcodeproj"
             exit 1
           fi
-          # 尝试无签名构建
+          echo "=== Running xcodebuild (no-sign) ==="
           $XCODE_CMD \
             -scheme voxlink_iOS \
             -configuration Debug \
@@ -264,7 +265,7 @@ jobs:
           BUILD_EXIT=${PIPESTATUS[0]}
           echo "xcodebuild exit code: $BUILD_EXIT"
           if [ $BUILD_EXIT -ne 0 ]; then
-            echo "xcodebuild 失败，列出所有产物目录："
+            echo "=== 搜索所有 .app 产物 ==="
             find ~/Library/Developer/Xcode/DerivedData -name "*.app" -type d 2>/dev/null | head -10
             find . -name "*.app" -type d 2>/dev/null | head -10
           fi
