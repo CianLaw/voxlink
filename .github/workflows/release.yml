@@ -10,35 +10,16 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: 'macos-latest'
-            args: '--target aarch64-apple-darwin'
-          - platform: 'macos-latest'
-            args: '--target x86_64-apple-darwin'
-          - platform: 'windows-latest'
-            args: ''
-
-    runs-on: ${{ matrix.platform }}
+  build-macos:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Setup Rust
-        uses: dtolnay/rust-action@stable
-        with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
+      - uses: dtolnay/rust-action@stable
       - name: Install dependencies
         run: npm install
-
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -48,15 +29,28 @@ jobs:
           releaseBody: |
             ## VoxLink v__VERSION__
             高精度语音输入助手
-
-            ### 安装说明
-            - **macOS**: 下载 .dmg 文件，双击安装
-            - **Windows**: 下载 .msi 文件，双击安装
-
-            ### 作者
-            - 作者: @没
-            - 邮箱: lao88888@agent.qq.com
-            - 备用: lao132973264188@gmail.com
+            - macOS: 下载 .dmg 安装
+            - Windows: 下载 .msi 安装
+            - 作者: @没 | lao88888@agent.qq.com
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-action@stable
+      - name: Install dependencies
+        run: npm install
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'VoxLink v__VERSION__'
+          releaseBody: 'See full release notes above'
+          releaseDraft: true
+          prerelease: false
