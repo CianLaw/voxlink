@@ -30,9 +30,7 @@
     "security": {
       "csp": "default-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
     },
-    "trayIcon": {
-      "iconAsTemplate": true
-    }
+    "trayIcon": null
   },
   "bundle": {
     "active": true,
