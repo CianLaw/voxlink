@@ -1,9 +1,9 @@
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Emitter, Manager,
 };
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+use tauri_plugin_global_shortcut::{Shortcut, ShortcutState, Modifiers, Code};
 
 // ============ 灵动岛窗口管理 ============
 
@@ -23,41 +23,16 @@ fn get_island_position(app: &AppHandle) -> (i32, i32) {
     (500, 600)
 }
 
-fn create_island_window(app: &AppHandle) -> Result<(), String> {
-    if app.get_webview_window("island").is_some() {
-        return Ok(());
+fn position_island_window(app: &AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("island") {
+        let (x, y) = get_island_position(app);
+        let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: x as f64, y: y as f64 }));
     }
-
-    let (x, y) = get_island_position(app);
-
-    let window = WebviewWindowBuilder::new(app, "island", WebviewUrl::App("/island.html".into()))
-        .title("")
-        .inner_size(ISLAND_WIDTH, ISLAND_HEIGHT)
-        .position(x as f64, y as f64)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .transparent(true)
-        .shadow(false)
-        .visible(false)
-        .resizable(false)
-        .maximizable(false)
-        .minimizable(false)
-        .focused(true)
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    #[cfg(target_os = "macos")]
-    {
-        use tauri::utils::config::WindowEffectsConfig;
-        let _ = window.set_window_effect(tauri::utils::config::WindowEffect::HudWindow);
-    }
-
     Ok(())
 }
 
 fn show_island(app: &AppHandle) {
-    let _ = create_island_window(app);
+    let _ = position_island_window(app);
     if let Some(window) = app.get_webview_window("island") {
         let (x, y) = get_island_position(app);
         let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: x as f64, y: y as f64 }));
@@ -120,7 +95,7 @@ fn cmd_get_app_version() -> String {
 
 // ============ 系统托盘 ============
 
-fn build_tray_menu(app: &AppHandle) -> Result<Menu, tauri::Error> {
+fn build_tray_menu<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<Menu<R>, tauri::Error> {
     let toggle_i = MenuItem::with_id(app, "toggle", "切换语音输入", true, None::<&str>)?;
     let show_i = MenuItem::with_id(app, "show", "打开设置", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
@@ -170,50 +145,20 @@ fn setup_tray(app: &AppHandle) -> Result<(), tauri::Error> {
     Ok(())
 }
 
-// ============ 全局快捷键 ============
-
-fn setup_shortcuts(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let handle = app.clone();
-
-    app.global_shortcut().on_shortcut(
-        tauri_plugin_global_shortcut::Shortcut::new(
-            tauri_plugin_global_shortcut::Modifiers::CONTROL
-                | tauri_plugin_global_shortcut::Modifiers::SHIFT,
-            tauri_plugin_global_shortcut::Code::KeyV,
-        ),
-        move |app, _shortcut, event| {
-            if event.state == ShortcutState::Pressed {
-                toggle_island(app);
-            }
-        },
-    )?;
-
-    // macOS: 同时注册 Cmd+Shift+V
-    #[cfg(target_os = "macos")]
-    {
-        let handle2 = handle.clone();
-        handle.global_shortcut().on_shortcut(
-            tauri_plugin_global_shortcut::Shortcut::new(
-                tauri_plugin_global_shortcut::Modifiers::SUPER
-                    | tauri_plugin_global_shortcut::Modifiers::SHIFT,
-                tauri_plugin_global_shortcut::Code::KeyV,
-            ),
-            move |app, _shortcut, event| {
-                if event.state == ShortcutState::Pressed {
-                    toggle_island(app);
-                }
-            },
-        )?;
-    }
-
-    Ok(())
-}
-
 // ============ 主入口 ============
 
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_global_shortcut::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new()
+            .with_shortcuts([
+                Shortcut::new(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyV),
+            ])
+            .with_handler(|app, _shortcut, event| {
+                if event.state == ShortcutState::Pressed {
+                    toggle_island(app);
+                }
+            })
+            .build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
@@ -230,14 +175,11 @@ pub fn run() {
                 let _ = window.hide();
             }
 
-            // 预创建灵动岛窗口
-            let _ = create_island_window(app.handle());
+            // 调整灵动岛窗口位置
+            let _ = position_island_window(app.handle());
 
             // 设置系统托盘
             let _ = setup_tray(app.handle());
-
-            // 注册全局快捷键
-            let _ = setup_shortcuts(app.handle());
 
             Ok(())
         })
