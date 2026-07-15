@@ -13,44 +13,55 @@ jobs:
   build-macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-      - uses: dtolnay/rust-action@stable
-      - name: Install dependencies
+
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Install frontend deps
         run: npm install
-      - uses: tauri-apps/tauri-action@v0
+
+      - name: Build and Release
+        uses: tauri-apps/tauri-action@v0.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__
           releaseName: 'VoxLink v__VERSION__'
-          releaseBody: |
-            ## VoxLink v__VERSION__
-            高精度语音输入助手
-            - macOS: 下载 .dmg 安装
-            - Windows: 下载 .msi 安装
-            - 作者: @没 | lao88888@agent.qq.com
+          releaseBody: 'VoxLink v__VERSION__ - 高精度语音输入助手'
           releaseDraft: true
           prerelease: false
 
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-      - uses: dtolnay/rust-action@stable
-      - name: Install dependencies
+
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Install frontend deps
         run: npm install
-      - uses: tauri-apps/tauri-action@v0
+
+      - name: Build and Release
+        uses: tauri-apps/tauri-action@v0.5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__
           releaseName: 'VoxLink v__VERSION__'
-          releaseBody: 'See full release notes above'
+          releaseBody: 'VoxLink v__VERSION__ - 高精度语音输入助手'
           releaseDraft: true
           prerelease: false
