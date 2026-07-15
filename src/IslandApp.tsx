@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 // 从 localStorage 读取 API Key，首次使用需在设置中配置
 function getApiKey(): string | null {
@@ -230,15 +230,14 @@ export default function IslandApp() {
 
   // ========== 监听 Tauri 事件 ==========
   useEffect(() => {
-    const { listen } = require("@tauri-apps/api/event");
     const unsubs: (() => void)[] = [];
 
     listen("island:show", () => { startRecording(); })
-      .then((u: () => void) => unsubs.push(u));
+      .then((u: () => void) => { unsubs.push(u); });
     listen("island:hide", () => { doStop(); })
-      .then((u: () => void) => unsubs.push(u));
+      .then((u: () => void) => { unsubs.push(u); });
 
-    return () => unsubs.forEach(u => u());
+    return () => { unsubs.forEach(u => u()); };
   }, [startRecording, doStop]);
 
   return (
