@@ -1,0 +1,26 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capabilities for VoxLink",
+  "windows": ["main", "island"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-position",
+    "core:window:allow-start-dragging",
+    "core:window:allow-close",
+    "core:webview:allow-internal-toggle-devtools",
+    "shell:allow-open",
+    "global-shortcut:allow-is-registered",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-unregister-all",
+    "os:allow-platform",
+    "os:allow-version",
+    "os:allow-os-type",
+    "process:allow-restart",
+    "process:allow-exit"
+  ]
+}

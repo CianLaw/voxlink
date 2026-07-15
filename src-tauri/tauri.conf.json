@@ -1,0 +1,71 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VoxLink",
+  "version": "1.1.0",
+  "identifier": "com.voxlink.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "VoxLink",
+        "width": 430,
+        "height": 780,
+        "minWidth": 380,
+        "minHeight": 600,
+        "center": true,
+        "visible": false,
+        "decorations": true,
+        "transparent": false,
+        "fullscreen": false,
+        "resizable": true,
+        "maximizable": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+    },
+    "trayIcon": {
+      "id": "main-tray",
+      "iconAsTemplate": true,
+      "menuOnLeftClick": false
+    }
+  },
+  "bundle": {
+    "active": true,
+    "category": "Productivity",
+    "copyright": "Copyright (c) 2026 @没",
+    "publisher": "@没",
+    "homepage": "https://voxlink.app",
+    "shortDescription": "高精度语音输入助手",
+    "longDescription": "VoxLink 是一款高精度跨平台语音输入助手，支持全局快捷键唤起灵动岛语音输入、AI润色排版、多语言翻译等功能。",
+    "targets": ["app", "dmg", "msi"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "10.15",
+      "license": "MIT",
+      "signingIdentity": null,
+      "entitlements": "entitlements.plist"
+    },
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "nsis": {
+        "installMode": "perMachine",
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico"
+      }
+    }
+  }
+}

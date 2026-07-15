@@ -1,0 +1,28 @@
+[package]
+name = "voxlink"
+version = "1.1.0"
+description = "VoxLink - 高精度语音输入助手"
+authors = ["@没 <lao88888@agent.qq.com>"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "voxlink_lib"
+crate-type = ["staticlib", "cdylib", "lib"]
+
+[[bin]]
+name = "voxlink"
+path = "src/main.rs"
+
+[dependencies]
+tauri = { version = "2.4", features = ["tray-icon", "image-png"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tauri-plugin-global-shortcut = "2.2"
+tauri-plugin-shell = "2.2"
+tauri-plugin-os = "2.2"
+tauri-plugin-process = "2.2"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
