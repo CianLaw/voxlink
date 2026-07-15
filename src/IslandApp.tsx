@@ -11,7 +11,6 @@ function getApiKey(): string | null {
 }
 
 export default function IslandApp() {
-  const [isRecording, setIsRecording] = useState(false);
   const [isPolishing, setIsPolishing] = useState(false);
 
   const waveRef = useRef<HTMLCanvasElement>(null);
@@ -116,7 +115,6 @@ export default function IslandApp() {
     let acc = "";
 
     recog.onstart = () => {
-      setIsRecording(true);
       isRecRef.current = true;
       finalTextRef.current = "";
       interimTextRef.current = "";
@@ -157,7 +155,6 @@ export default function IslandApp() {
 
   const doStop = useCallback(() => {
     isRecRef.current = false;
-    setIsRecording(false);
     waveIntensityRef.current = 0.05;
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
     stopWave();
