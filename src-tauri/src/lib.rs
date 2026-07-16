@@ -3,7 +3,7 @@ use tauri::{
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager,
 };
-use tauri_plugin_global_shortcut::{Shortcut, ShortcutState, Modifiers, Code};
+use tauri_plugin_global_shortcut::{Shortcut, ShortcutState, Modifiers, Code, GlobalShortcutExt};
 
 // ============ 灵动岛窗口管理 ============
 
