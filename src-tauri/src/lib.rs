@@ -11,7 +11,7 @@ const ISLAND_WIDTH: f64 = 260.0;
 const ISLAND_HEIGHT: f64 = 56.0;
 
 fn get_island_position(app: &AppHandle) -> (i32, i32) {
-    if let Ok(Some(window)) = app.get_webview_window("main") {
+    if let Some(window) = app.get_webview_window("main") {
         if let Ok(Some(monitor)) = window.current_monitor() {
             let size = monitor.size();
             let scale = monitor.scale_factor();
@@ -24,7 +24,7 @@ fn get_island_position(app: &AppHandle) -> (i32, i32) {
 }
 
 fn position_island_window(app: &AppHandle) -> Result<(), String> {
-    if let Ok(Some(window)) = app.get_webview_window("island") {
+    if let Some(window) = app.get_webview_window("island") {
         let (x, y) = get_island_position(app);
         let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: x as f64, y: y as f64 }));
     }
@@ -33,7 +33,7 @@ fn position_island_window(app: &AppHandle) -> Result<(), String> {
 
 fn show_island(app: &AppHandle) {
     let _ = position_island_window(app);
-    if let Ok(Some(window)) = app.get_webview_window("island") {
+    if let Some(window) = app.get_webview_window("island") {
         let (x, y) = get_island_position(app);
         let _ = window.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: x as f64, y: y as f64 }));
         let _ = window.show();
@@ -43,14 +43,14 @@ fn show_island(app: &AppHandle) {
 }
 
 fn hide_island(app: &AppHandle) {
-    if let Ok(Some(window)) = app.get_webview_window("island") {
+    if let Some(window) = app.get_webview_window("island") {
         let _ = window.hide();
         let _ = app.emit("island:hide", ());
     }
 }
 
 fn toggle_island(app: &AppHandle) {
-    if let Ok(Some(window)) = app.get_webview_window("island") {
+    if let Some(window) = app.get_webview_window("island") {
         if window.is_visible().unwrap_or(false) {
             hide_island(app);
         } else {
@@ -75,7 +75,7 @@ fn cmd_hide_island(app: AppHandle) {
 
 #[tauri::command]
 fn cmd_show_main(app: AppHandle) {
-    if let Ok(Some(window)) = app.get_webview_window("main") {
+    if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.set_focus();
     }
@@ -83,7 +83,7 @@ fn cmd_show_main(app: AppHandle) {
 
 #[tauri::command]
 fn cmd_hide_main(app: AppHandle) {
-    if let Ok(Some(window)) = app.get_webview_window("main") {
+    if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
     }
 }
@@ -115,7 +115,7 @@ fn setup_tray(app: &AppHandle) -> Result<(), tauri::Error> {
             match event.id.as_ref() {
                 "toggle" => toggle_island(app),
                 "show" => {
-                    if let Ok(Some(window)) = app.get_webview_window("main") {
+                    if let Some(window) = app.get_webview_window("main") {
                         let _ = window.show();
                         let _ = window.set_focus();
                     }
@@ -130,7 +130,7 @@ fn setup_tray(app: &AppHandle) -> Result<(), tauri::Error> {
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click { button: MouseButton::Left, .. } = event {
                 let app = tray.app_handle();
-                if let Ok(Some(window)) = app.get_webview_window("main") {
+                if let Some(window) = app.get_webview_window("main") {
                     if window.is_visible().unwrap_or(false) {
                         let _ = window.hide();
                     } else {
@@ -162,7 +162,7 @@ pub fn run() {
         ])
         .setup(|app| {
             // 隐藏主窗口（后台运行）
-            if let Ok(Some(window)) = app.get_webview_window("main") {
+            if let Some(window) = app.get_webview_window("main") {
                 let _ = window.hide();
             }
 
@@ -185,7 +185,7 @@ pub fn run() {
         })
         .on_window_event(|app, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if let Ok(Some(window)) = app.get_webview_window("main") {
+                if let Some(window) = app.get_webview_window("main") {
                     if window.label() == "main" {
                         api.prevent_close();
                         let _ = window.hide();
