@@ -25,18 +25,14 @@ jobs:
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Install Tauri CLI
-        run: |
-          source "$HOME/.cargo/env"
-          cargo install tauri-cli
-
       - name: Install frontend deps
         run: npm install
 
       - name: Build Release
+        timeout-minutes: 30
         run: |
           source "$HOME/.cargo/env"
-          cargo tauri build
+          npx tauri build
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
@@ -44,7 +40,6 @@ jobs:
         with:
           files: |
             src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/*.app.tar.gz
           draft: true
           generate_release_notes: true
         env:
@@ -69,18 +64,14 @@ jobs:
           .\rustup-init.exe -y --default-toolchain stable-msvc
           "$env:USERPROFILE\.cargo\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
-      - name: Install Tauri CLI
-        run: |
-          $env:Path += ";$env:USERPROFILE\.cargo\bin"
-          cargo install tauri-cli --version "^2.0"
-
       - name: Install frontend deps
         run: npm install
 
       - name: Build Release
+        timeout-minutes: 30
         run: |
           $env:Path += ";$env:USERPROFILE\.cargo\bin"
-          cargo tauri build
+          npx tauri build
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
