@@ -145,32 +145,11 @@ fn setup_tray(app: &AppHandle) -> Result<(), tauri::Error> {
     Ok(())
 }
 
-// ============ 全局快捷键插件构建 ============
-
-fn build_shortcut_plugin() -> tauri_plugin_global_shortcut::TauriPlugin<tauri::Wry> {
-    let shortcuts = vec![
-        Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyV),
-    ];
-
-    tauri_plugin_global_shortcut::Builder::new()
-        .with_shortcuts(&shortcuts)
-        .unwrap_or_else(|e| {
-            eprintln!("Warning: failed to register shortcuts: {}", e);
-            tauri_plugin_global_shortcut::Builder::new()
-        })
-        .with_handler(|app, _shortcut, event| {
-            if event.state == ShortcutState::Pressed {
-                toggle_island(app);
-            }
-        })
-        .build()
-}
-
 // ============ 主入口 ============
 
 pub fn run() {
     tauri::Builder::default()
-        .plugin(build_shortcut_plugin())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
@@ -192,6 +171,16 @@ pub fn run() {
 
             // 设置系统托盘
             let _ = setup_tray(app.handle());
+
+            // 注册全局快捷键
+            if let Ok(gs) = app.global_shortcut() {
+                let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyV);
+                let _ = gs.on_shortcut(shortcut, |app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        toggle_island(app);
+                    }
+                });
+            }
 
             Ok(())
         })
