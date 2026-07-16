@@ -110,7 +110,7 @@ fn setup_tray(app: &AppHandle) -> Result<(), tauri::Error> {
         .icon(app.default_window_icon().unwrap().clone())
         .tooltip("VoxLink 语音输入助手\n快捷键: Ctrl+Shift+V")
         .menu(&menu)
-        .menu_on_left_click(false)
+        .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
             match event.id.as_ref() {
                 "toggle" => toggle_island(app),
@@ -145,20 +145,32 @@ fn setup_tray(app: &AppHandle) -> Result<(), tauri::Error> {
     Ok(())
 }
 
+// ============ 全局快捷键插件构建 ============
+
+fn build_shortcut_plugin() -> tauri_plugin_global_shortcut::TauriPlugin<tauri::Wry> {
+    let shortcuts = vec![
+        Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyV),
+    ];
+
+    tauri_plugin_global_shortcut::Builder::new()
+        .with_shortcuts(&shortcuts)
+        .unwrap_or_else(|e| {
+            eprintln!("Warning: failed to register shortcuts: {}", e);
+            tauri_plugin_global_shortcut::Builder::new()
+        })
+        .with_handler(|app, _shortcut, event| {
+            if event.state == ShortcutState::Pressed {
+                toggle_island(app);
+            }
+        })
+        .build()
+}
+
 // ============ 主入口 ============
 
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_global_shortcut::Builder::new()
-            .with_shortcuts([
-                Shortcut::new(Modifiers::CONTROL | Modifiers::SHIFT, Code::KeyV),
-            ])
-            .with_handler(|app, _shortcut, event| {
-                if event.state == ShortcutState::Pressed {
-                    toggle_island(app);
-                }
-            })
-            .build())
+        .plugin(build_shortcut_plugin())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
